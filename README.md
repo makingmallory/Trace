@@ -6,7 +6,9 @@ The name **Trace** is a working project title; `PROJECT_SPEC.md` remains the pro
 
 ## Current status
 
-Milestone 0 — Technical Skeleton is complete. It includes:
+Milestone 0 — Technical Skeleton and Milestone 0.5 — Google Sync Spike are complete. The live local-browser spike successfully wrote a generated test record to a user-owned Google Sheet, read it back, and verified an exact ID, value, and timestamp match.
+
+The current foundation includes:
 
 - a Vite-powered React and TypeScript application
 - route-based placeholders for Home, Trends, History, Trackables, and Settings
@@ -16,8 +18,12 @@ Milestone 0 — Technical Skeleton is complete. It includes:
 - a `DataRepository` boundary with an in-memory placeholder
 - intentionally small provider boundaries for sync, analytics, predictions, and assets
 - foundational domain tests
+- a test-only `SyncProvider` round-trip implementation and developer screen
+- a bound Apps Script proof of concept under `apps-script/`
 
-No Daily Check-In, Event logging, real local persistence, Google sync, analytics, predictions, or Android code is implemented yet.
+No Daily Check-In, Event logging, real local persistence, production sync, analytics, predictions, or Android code is implemented yet.
+
+Apps Script is the current preferred V1 sync direction, but production authorization, endpoint security, per-user setup, recovery, and multi-platform testing remain intentionally deferred. See [the Google sync spike record and setup guide](docs/google-sync-spike.md). Never use the spike endpoint for personal or health data.
 
 ## Setup
 
