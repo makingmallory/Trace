@@ -1,29 +1,26 @@
 # Trace
 
-Trace is a flexible, local-first personal health and pattern tracker. The project is designed to support user-defined Trackables and Events without making any named health condition structurally special.
-
-The name **Trace** is a working project title; `PROJECT_SPEC.md` remains the product and architecture source of truth.
+Trace is a flexible, local-first personal health and pattern tracker. It supports user-defined Trackables and Events without making any named health condition structurally special. `PROJECT_SPEC.md` is the product and architecture source of truth.
 
 ## Current status
 
-Milestone 0 — Technical Skeleton and Milestone 0.5 — Google Sync Spike are complete. The live local-browser spike successfully wrote a generated test record to a user-owned Google Sheet, read it back, and verified an exact ID, value, and timestamp match.
+Milestones 0–5 are implemented through Production Sync. Trace keeps IndexedDB as its offline-first working copy and can maintain a normalized, versioned replica in a user-owned Google Sheet.
 
-The current foundation includes:
+The current implementation includes:
 
-- a Vite-powered React and TypeScript application
-- route-based placeholders for Home, Trends, History, Trackables, and Settings
-- responsive bottom navigation
-- semantic theme and design tokens with an initial fantasy-inspired palette
-- core domain interfaces that preserve versioning and missing-data meaning
-- a `DataRepository` boundary with an in-memory placeholder
-- intentionally small provider boundaries for sync, analytics, predictions, and assets
-- foundational domain tests
-- a test-only `SyncProvider` round-trip implementation and developer screen
-- a bound Apps Script proof of concept under `apps-script/`
+- Vite, React, and TypeScript
+- Home, Daily Check-In, event logging, History, Trackables, and Settings flows
+- semantic theme/design tokens and responsive navigation
+- versioned domain entities that preserve missing-data and date/time meaning
+- IndexedDB and in-memory `DataRepository` implementations
+- production Google Sheets `SyncProvider` batching, incremental checkpoints, conflicts, tombstones, reconnect recovery, and status
+- full-fidelity JSON backup export
+- a bound production Apps Script endpoint under `apps-script/`
+- domain, persistence, protocol, and reconciliation tests
 
-No Daily Check-In, Event logging, real local persistence, production sync, analytics, predictions, or Android code is implemented yet.
+Trends, predictions, Android packaging/widget work, and advanced analytics remain deferred to later milestones.
 
-Apps Script is the current preferred V1 sync direction, but production authorization, endpoint security, per-user setup, recovery, and multi-platform testing remain intentionally deferred. See [the Google sync spike record and setup guide](docs/google-sync-spike.md). Never use the spike endpoint for personal or health data.
+See [Google Sheets backup setup](docs/google-sync-setup.md) for setup, recovery, workbook format, and the important anonymous-deployment security limitation. The [Milestone 0.5 sync spike](docs/google-sync-spike.md) remains only as a historical record.
 
 ## Setup
 
@@ -38,9 +35,7 @@ Install dependencies:
 npm.cmd install
 ```
 
-The `.cmd` form is recommended on Windows when PowerShell script execution prevents `npm.ps1` from running. On systems without that restriction, regular `npm` commands work too.
-
-If this Windows machine reports `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, keep npm's strict SSL checking enabled and ask Node to trust the Windows certificate store for that install:
+The `.cmd` form is recommended on Windows when PowerShell script execution prevents `npm.ps1` from running. If npm reports `UNABLE_TO_VERIFY_LEAF_SIGNATURE`, keep strict SSL enabled and ask Node to trust the Windows certificate store:
 
 ```powershell
 node --use-system-ca "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" install
@@ -48,28 +43,12 @@ node --use-system-ca "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" i
 
 ## Development
 
-Start the local development server:
-
 ```powershell
 npm.cmd run dev
-```
-
-Run the foundational tests:
-
-```powershell
 npm.cmd test
-```
-
-Check TypeScript:
-
-```powershell
 npm.cmd run typecheck
-```
-
-Create a production build:
-
-```powershell
+npm.cmd run lint
 npm.cmd run build
 ```
 
-The app uses hash-based routing and a relative Vite base path so a future static build can run under a GitHub Pages repository path without server-side route rewrites.
+The app uses hash-based routing and a relative Vite base path so a static build can run under a GitHub Pages repository path without server-side route rewrites.

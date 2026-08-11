@@ -2,6 +2,7 @@ import type {
   DataRepository,
   RepositoryCollection,
   RepositoryCollectionMap,
+  RepositoryWrite,
 } from '../repository/DataRepository.ts'
 import { repositoryCollections } from '../repository/DataRepository.ts'
 
@@ -49,6 +50,24 @@ export class InMemoryDataRepository implements DataRepository {
   ): Promise<void> {
     for (const entity of entities) {
       await this.save(collection, entity)
+    }
+  }
+
+  async saveTransaction(writes: readonly RepositoryWrite[]): Promise<void> {
+    const snapshots = new Map<RepositoryCollection, Map<string, unknown>>()
+    for (const collection of repositoryCollections) snapshots.set(collection, new Map(this.stores[collection] as Map<string, unknown>))
+    try {
+      for (const write of writes) {
+        const store = this.stores[write.collection] as Map<string, { id: string }>
+        for (const entity of write.entities) store.set(entity.id, clone(entity))
+      }
+    } catch (error) {
+      for (const collection of repositoryCollections) {
+        const store = this.stores[collection] as Map<string, unknown>
+        store.clear()
+        for (const [id, entity] of snapshots.get(collection)!) store.set(id, entity)
+      }
+      throw error
     }
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SyncSpikeRecord } from '../SyncProvider.ts'
+import type { SyncRecord } from '../SyncProtocol.ts'
 import { GoogleSheetsAppsScriptSyncProvider } from './GoogleSheetsAppsScriptSyncProvider.ts'
 
 const endpoint = 'https://script.google.com/macros/s/test-deployment/exec'
@@ -7,6 +8,11 @@ const record: SyncSpikeRecord = {
   id: 'record-1',
   value: 'Trace sync spike',
   createdAt: '2026-08-10T12:00:00.000Z',
+}
+const productionRecord: SyncRecord = {
+  format: 'trace-sync', syncVersion: 1, schemaVersion: 1, entityType: 'categories', id: 'category-1', revision: 1,
+  createdAt: '2026-08-10T12:00:00.000Z', updatedAt: '2026-08-10T12:00:00.000Z', deletedAt: null,
+  baseRemoteRevision: 0, remoteRevision: 1, payload: { name: 'Category', sortOrder: 0, active: true },
 }
 
 function jsonResponse(data: unknown) {
@@ -113,5 +119,32 @@ describe('GoogleSheetsAppsScriptSyncProvider', () => {
       available: false,
       message: 'The Apps Script endpoint returned an invalid response.',
     })
+  })
+
+  it('validates production metadata and parses incremental pull records', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { syncVersion: 1, schemaVersion: 1, checkpoint: 1, sheetName: 'Trace Backup', sheetId: 'sheet-1' } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { checkpoint: 1, records: [productionRecord] } }))
+    const provider = new GoogleSheetsAppsScriptSyncProvider({ endpointUrl: endpoint, fetchImplementation })
+    await expect(provider.healthCheck()).resolves.toMatchObject({ available: true, sheetName: 'Trace Backup', checkpoint: 1 })
+    await expect(provider.pullChanges(0)).resolves.toEqual({ checkpoint: 1, records: [productionRecord] })
+    expect(new URL(String(fetchImplementation.mock.calls[1][0])).searchParams.get('checkpoint')).toBe('0')
+  })
+
+  it('sends one production batch and rejects malformed conflict responses', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { checkpoint: 1, accepted: [productionRecord], conflicts: [] } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { checkpoint: 2, accepted: [], conflicts: [{ local: productionRecord, remote: { bad: true } }] } }))
+    const provider = new GoogleSheetsAppsScriptSyncProvider({ endpointUrl: endpoint, fetchImplementation })
+    await expect(provider.pushBatch([productionRecord])).resolves.toMatchObject({ checkpoint: 1, accepted: [productionRecord] })
+    const body = JSON.parse(String(fetchImplementation.mock.calls[0][1]?.body))
+    expect(body).toMatchObject({ action: 'pushBatch', syncVersion: 1, schemaVersion: 1, records: [productionRecord] })
+    await expect(provider.pushBatch([productionRecord])).rejects.toThrow(/incompatible Trace sync format/i)
+  })
+
+  it('rejects a future remote schema during connection validation', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true, data: { syncVersion: 1, schemaVersion: 99 } }))
+    const provider = new GoogleSheetsAppsScriptSyncProvider({ endpointUrl: endpoint, fetchImplementation })
+    await expect(provider.healthCheck()).resolves.toMatchObject({ available: false, message: expect.stringMatching(/not a compatible/i) })
   })
 })

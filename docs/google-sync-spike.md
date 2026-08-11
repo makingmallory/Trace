@@ -1,6 +1,6 @@
-# Google Sheets sync spike
+# Historical Google Sheets sync spike (Milestone 0.5)
 
-Milestone 0.5 proves that Trace can send a generated test record through the `SyncProvider` boundary to a user-owned Google Sheet and read the exact record back through Google Apps Script. The developer tool remains available for future regression testing, but the endpoint is not production sync and must not be used for health data.
+Milestone 0.5 proved that Trace could send a generated test record through the `SyncProvider` boundary to a user-owned Google Sheet and read it back through Google Apps Script. Milestone 5 has replaced the spike as the consumer path; see [`google-sync-setup.md`](google-sync-setup.md) for the production format and setup. The old `SyncSpike` action remains only as a hidden non-sensitive regression utility.
 
 ## Outcome: live browser round-trip passed
 
@@ -13,7 +13,7 @@ The live test succeeded from the normal local browser build on August 10, 2026:
 
 The test used an ordinary cross-origin `fetch`, a simple `text/plain` POST, and normal redirect following. It did not use JSONP, `no-cors`, an embedded secret, or a proxy. This removes browser CORS and Apps Script Content Service redirects as blockers for the tested local-browser deployment.
 
-The spike does not prove production schema sync, authentication, conflict handling, batching, recovery, GitHub Pages behavior, or Capacitor Android behavior.
+The original spike did not prove production schema sync, authentication, conflict handling, batching, or recovery. Those are implemented by Milestone 5, while live GitHub Pages and Capacitor verification remain environment-dependent manual checks.
 
 ## V1 direction
 
@@ -64,7 +64,7 @@ From the Trace project folder:
 npm.cmd run dev -- --host 127.0.0.1
 ```
 
-Open the exact local URL printed by Vite, then go to **Settings → Open sync spike tool**. You can also open `#/sync-spike` directly.
+Open the exact local URL printed by Vite, then open `#/sync-spike` directly. The historical regression utility is intentionally not linked from consumer Settings.
 
 ## 5. Run the round-trip
 

@@ -1,8 +1,12 @@
 import type {
+  PullResult,
+  PushResult,
+  SyncProvider,
   SyncSpikeProvider,
   SyncProviderHealth,
   SyncSpikeRecord,
 } from '../SyncProvider.ts'
+import { parseSyncRecord, TRACE_SCHEMA_VERSION, TRACE_SYNC_VERSION, type SyncRecord } from '../SyncProtocol.ts'
 
 interface ApiEnvelope {
   ok: boolean
@@ -10,7 +14,7 @@ interface ApiEnvelope {
   error?: string
 }
 
-interface GoogleSheetsAppsScriptSyncProviderOptions {
+export interface GoogleSheetsAppsScriptSyncProviderOptions {
   endpointUrl: string
   fetchImplementation?: typeof fetch
 }
@@ -73,8 +77,8 @@ function validateEndpoint(endpointUrl: string): URL {
   return url
 }
 
-export class GoogleSheetsAppsScriptSyncProvider implements SyncSpikeProvider {
-  readonly providerId = 'google-sheets-apps-script-spike'
+export class GoogleSheetsAppsScriptSyncProvider implements SyncProvider, SyncSpikeProvider {
+  readonly providerId = 'google-sheets-apps-script'
 
   private readonly endpointUrl: URL
   private readonly fetchImplementation: typeof fetch
@@ -90,7 +94,10 @@ export class GoogleSheetsAppsScriptSyncProvider implements SyncSpikeProvider {
 
   async healthCheck(): Promise<SyncProviderHealth> {
     try {
-      const data = await this.get({ action: 'healthCheck' })
+      const data = await this.get({ action: 'getMetadata' })
+      if (!isObject(data) || data.syncVersion !== TRACE_SYNC_VERSION || data.schemaVersion !== TRACE_SCHEMA_VERSION) {
+        throw new Error('This Google Sheet is not a compatible Trace backup.')
+      }
       const sheetName =
         isObject(data) && typeof data.sheetName === 'string'
           ? data.sheetName
@@ -99,6 +106,10 @@ export class GoogleSheetsAppsScriptSyncProvider implements SyncSpikeProvider {
       return {
         available: true,
         message: `Connected to ${sheetName}.`,
+        sheetName,
+        sheetId: typeof data.sheetId === 'string' ? data.sheetId : undefined,
+        schemaVersion: TRACE_SCHEMA_VERSION,
+        checkpoint: typeof data.checkpoint === 'number' ? data.checkpoint : 0,
       }
     } catch (error) {
       return {
@@ -108,17 +119,35 @@ export class GoogleSheetsAppsScriptSyncProvider implements SyncSpikeProvider {
     }
   }
 
-  async pushTestRecord(record: SyncSpikeRecord): Promise<void> {
-    await this.request({
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain',
-      },
-      body: JSON.stringify({
-        action: 'pushTestRecord',
-        record,
+  async pullChanges(checkpoint: number): Promise<PullResult> {
+    const data = await this.get({ action: 'pullChanges', checkpoint: String(checkpoint) })
+    if (!isObject(data) || !Number.isInteger(data.checkpoint) || !Array.isArray(data.records)) {
+      throw new Error('The Apps Script endpoint returned an invalid pull response.')
+    }
+    return { checkpoint: data.checkpoint as number, records: data.records.map(parseSyncRecord) }
+  }
+
+  async pushBatch(records: readonly SyncRecord[]): Promise<PushResult> {
+    const data = await this.post({ action: 'pushBatch', syncVersion: TRACE_SYNC_VERSION, schemaVersion: TRACE_SCHEMA_VERSION, records })
+    if (!isObject(data) || !Number.isInteger(data.checkpoint) || !Array.isArray(data.accepted) || !Array.isArray(data.conflicts)) {
+      throw new Error('The Apps Script endpoint returned an invalid push response.')
+    }
+    return {
+      checkpoint: data.checkpoint as number,
+      accepted: data.accepted.map(parseSyncRecord),
+      conflicts: data.conflicts.map((item) => {
+        if (!isObject(item)) throw new Error('The endpoint returned an invalid conflict.')
+        return { local: parseSyncRecord(item.local), remote: parseSyncRecord(item.remote) }
       }),
-    })
+    }
+  }
+
+  async pushTestRecord(record: SyncSpikeRecord): Promise<void> {
+    await this.post({ action: 'pushTestRecord', record })
+  }
+
+  private async post(body: Record<string, unknown>): Promise<unknown> {
+    return this.request({ method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) })
   }
 
   async readTestRecord(id: string): Promise<SyncSpikeRecord | null> {

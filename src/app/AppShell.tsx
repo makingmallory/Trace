@@ -1,15 +1,17 @@
 import { Outlet } from 'react-router-dom'
 import { BottomNavigation } from '../components/BottomNavigation.tsx'
+import { SyncCoordinator } from '../features/settings/SyncCoordinator.tsx'
 
 export function AppShell() {
   return (
     <div className="app-shell">
+      <SyncCoordinator />
       <header className="app-header">
         <a className="brand" href="#/" aria-label="Trace home">
           <span className="brand-mark" aria-hidden="true">✦</span>
           <span>Trace</span>
         </a>
-        <span className="milestone-badge">Event Logging</span>
+        <span className="milestone-badge">Local-first</span>
       </header>
 
       <main className="app-content" id="main-content">

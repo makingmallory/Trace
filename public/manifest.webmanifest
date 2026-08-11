@@ -1,0 +1,10 @@
+{
+  "name": "Trace",
+  "short_name": "Trace",
+  "description": "A local-first personal tracking app",
+  "start_url": "./#/",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fffcfe",
+  "theme_color": "#8d4e9e"
+}

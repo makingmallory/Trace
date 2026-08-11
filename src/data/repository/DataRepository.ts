@@ -38,6 +38,13 @@ export interface RepositoryCollectionMap {
 
 export type RepositoryCollection = keyof RepositoryCollectionMap
 
+export type RepositoryWrite = {
+  [K in RepositoryCollection]: {
+    collection: K
+    entities: readonly RepositoryCollectionMap[K][]
+  }
+}[RepositoryCollection]
+
 export const repositoryCollections: readonly RepositoryCollection[] = [
   'categories',
   'trackables',
@@ -76,4 +83,7 @@ export interface DataRepository {
     collection: K,
     entities: readonly RepositoryCollectionMap[K][],
   ): Promise<void>
+
+  /** Applies a coherent multi-store write or rejects without partially applying it. */
+  saveTransaction(writes: readonly RepositoryWrite[]): Promise<void>
 }

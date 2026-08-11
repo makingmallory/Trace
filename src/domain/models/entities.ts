@@ -198,4 +198,10 @@ export interface SyncMetadata extends Entity {
   lastSuccessfulSyncAt: ISODateTime | null
   pendingChangeCount: number
   lastError: string | null
+  remoteCheckpoint: number
+  recordStates: Readonly<Record<string, {
+    remoteRevision: number
+    entityRevision: number
+    fingerprint: string
+  }>>
 }

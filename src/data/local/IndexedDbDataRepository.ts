@@ -3,6 +3,7 @@ import {
   type DataRepository,
   type RepositoryCollection,
   type RepositoryCollectionMap,
+  type RepositoryWrite,
 } from '../repository/DataRepository.ts'
 import { bucketForHour } from '../../domain/events/eventTiming.ts'
 
@@ -132,6 +133,27 @@ export class IndexedDbDataRepository implements DataRepository {
     const store = transaction.objectStore(collection)
     for (const entity of entities) store.put(entity)
     await transactionDone(transaction)
+    this.announceChange(collection)
+  }
+
+  async saveTransaction(writes: readonly RepositoryWrite[]): Promise<void> {
+    const nonEmpty = writes.filter((write) => write.entities.length > 0)
+    if (nonEmpty.length === 0) return
+    const database = await this.open()
+    const collections = [...new Set(nonEmpty.map((write) => write.collection))]
+    const transaction = database.transaction(collections, 'readwrite')
+    for (const write of nonEmpty) {
+      const store = transaction.objectStore(write.collection)
+      for (const entity of write.entities) store.put(entity)
+    }
+    await transactionDone(transaction)
+    for (const collection of collections) this.announceChange(collection)
+  }
+
+  private announceChange(collection: RepositoryCollection): void {
+    if (collection !== 'syncMetadata' && typeof globalThis.dispatchEvent === 'function') {
+      globalThis.dispatchEvent(new CustomEvent('trace:data-changed', { detail: { collection } }))
+    }
   }
 
   close(): void {
