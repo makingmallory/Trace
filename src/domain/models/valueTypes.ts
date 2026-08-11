@@ -22,7 +22,16 @@ export type DataRole =
 
 export type ValueDirection = 'better' | 'worse' | 'neutral'
 export type EventTimingMode = 'point' | 'duration' | 'either' | 'dayOnly'
-export type TimePrecision = 'exact' | 'approximate' | 'day' | 'unknown'
+export type TimePrecision = 'exact' | 'timeOfDay' | 'day' | 'unknown'
+export type TimeOfDayBucket =
+  | 'overnight'
+  | 'early_morning'
+  | 'morning'
+  | 'early_afternoon'
+  | 'late_afternoon'
+  | 'evening'
+  | 'night'
+export type EventOccurrenceKind = 'point' | 'duration'
 export type RecordKind = 'routine' | 'event' | 'momentary'
 export type RecordStatus = 'draft' | 'completed'
 export type RecordSource =

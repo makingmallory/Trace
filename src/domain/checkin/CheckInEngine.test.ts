@@ -89,7 +89,7 @@ describe('CheckInEngine daily records', () => {
     const again = await engine.getOrCreateToday('2026-08-10', 'America/Chicago')
     expect(again.record.id).toBe(first.record.id)
     expect(again.record.startTime).toBeNull()
-    expect(again.record.timePrecision).toBe('day')
+    expect(again.record.startTimePrecision).toBe('day')
     expect(await repository.getAll('logRecords')).toHaveLength(1)
   })
 

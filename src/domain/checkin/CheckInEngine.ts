@@ -217,7 +217,9 @@ export class CheckInEngine {
       const timestamp = this.timestamp()
       record = {
         id: this.createId(), recordKind: 'routine', routineId: configuration.routine.id, localDate,
-        timePrecision: 'day', startTime: null, endTime: null, timezone, status: 'draft', source: 'app',
+        startTimePrecision: 'day', startTime: null, startTimeOfDay: null,
+        endLocalDate: null, endTimePrecision: null, endTime: null, endTimeOfDay: null, ongoing: false,
+        timezone, status: 'draft', source: 'app',
         createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
       }
       await this.repository.save('logRecords', record)

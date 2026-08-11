@@ -9,7 +9,7 @@ export function AppShell() {
           <span className="brand-mark" aria-hidden="true">✦</span>
           <span>Trace</span>
         </a>
-        <span className="milestone-badge">Nightly Check-In</span>
+        <span className="milestone-badge">Event Logging</span>
       </header>
 
       <main className="app-content" id="main-content">

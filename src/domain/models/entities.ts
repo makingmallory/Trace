@@ -15,6 +15,7 @@ import type {
   EventAssertionStatus,
   EventReminderBehavior,
   EventTimingMode,
+  EventOccurrenceKind,
   InputType,
   ObservationAnswer,
   RecordKind,
@@ -25,6 +26,7 @@ import type {
   RoutineFrequency,
   RoutineScheduleType,
   TimePrecision,
+  TimeOfDayBucket,
   TrendTrackingMode,
   ValueDirection,
 } from './valueTypes.ts'
@@ -126,10 +128,16 @@ export interface LogRecord extends SyncableEntity {
   recordKind: RecordKind
   routineId?: EntityId
   eventDefinitionId?: EntityId
+  eventTimingKind?: EventOccurrenceKind
   localDate: ISODate
-  timePrecision: TimePrecision
+  startTimePrecision: TimePrecision
   startTime: ISODateTime | null
+  startTimeOfDay: TimeOfDayBucket | null
+  endLocalDate: ISODate | null
+  endTimePrecision: TimePrecision | null
   endTime: ISODateTime | null
+  endTimeOfDay: TimeOfDayBucket | null
+  ongoing: boolean
   timezone: IANATimeZone | null
   status: RecordStatus
   source: RecordSource

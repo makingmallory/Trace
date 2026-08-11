@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { checkInEngine } from '../checkin/checkInEngine.ts'
+import { localDateFor } from '../../domain/checkin/CheckInEngine.ts'
+import { TodayEvents } from '../events/EventScreens.tsx'
 
 type TodayState = 'not_started' | 'draft' | 'completed'
 
@@ -18,8 +20,8 @@ export function HomeScreen() {
     <div className="hero-card"><span className="hero-card__motif" aria-hidden="true">☾ ✦</span><p>Little moments become meaningful patterns over time.</p></div>
     <div className="planned-actions">
       {configured ? <Link className="planned-action home-action" to="/check-in"><span aria-hidden="true">✓</span><div><strong>Daily Check-In</strong><small>{stateCopy[state]}</small></div><b aria-hidden="true">→</b></Link> : <Link className="planned-action home-action" to="/settings/nightly-check-in"><span aria-hidden="true">✓</span><div><strong>Set up Daily Check-In</strong><small>Choose your nightly questions</small></div><b aria-hidden="true">→</b></Link>}
-      <div className="planned-action" aria-label="Log Event, planned for Milestone 3"><span aria-hidden="true">＋</span><div><strong>Log Event</strong><small>Planned for Milestone 3</small></div></div>
+      <Link className="planned-action home-action" to="/events"><span aria-hidden="true">＋</span><div><strong>Log Event</strong><small>Quick, flexible logging</small></div><b aria-hidden="true">→</b></Link>
     </div>
-    <section className="today-card"><p className="eyebrow">Today</p><div><span className={`status-dot status-dot--${state}`} aria-hidden="true" /><strong>Daily Check-In</strong><span>{configured ? stateCopy[state] : 'Needs setup'}</span></div></section>
+    <section className="today-card"><p className="eyebrow">Today</p><div><span className={`status-dot status-dot--${state}`} aria-hidden="true" /><strong>Daily Check-In</strong><span>{configured ? stateCopy[state] : 'Needs setup'}</span></div><TodayEvents localDate={localDateFor(new Date())} /></section>
   </div></section>
 }

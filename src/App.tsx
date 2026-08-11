@@ -18,6 +18,7 @@ import {
   TrackablesScreen,
 } from './features/trackables/TrackablesScreen.tsx'
 import { TrendsScreen } from './features/trends/TrendsScreen.tsx'
+import { EventEditorScreen, LogEventScreen, ManageEventsScreen, QuickLogScreen } from './features/events/EventScreens.tsx'
 
 function App() {
   return (
@@ -25,6 +26,11 @@ function App() {
       <Route element={<AppShell />}>
         <Route index element={<HomeScreen />} />
         <Route path="check-in" element={<CheckInScreen />} />
+        <Route path="events" element={<QuickLogScreen />} />
+        <Route path="events/log/:eventDefinitionId" element={<LogEventScreen />} />
+        <Route path="events/manage" element={<ManageEventsScreen />} />
+        <Route path="events/manage/new" element={<EventEditorScreen />} />
+        <Route path="events/manage/:eventDefinitionId" element={<EventEditorScreen />} />
         <Route path="trends" element={<TrendsScreen />} />
         <Route path="history" element={<HistoryScreen />} />
         <Route path="trackables" element={<TrackablesScreen />} />
