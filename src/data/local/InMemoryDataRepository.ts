@@ -3,33 +3,15 @@ import type {
   RepositoryCollection,
   RepositoryCollectionMap,
 } from '../repository/DataRepository.ts'
+import { repositoryCollections } from '../repository/DataRepository.ts'
 
 type RepositoryStores = {
   [K in RepositoryCollection]: Map<string, RepositoryCollectionMap[K]>
 }
 
-const collectionNames: readonly RepositoryCollection[] = [
-  'categories',
-  'trackables',
-  'trackableVersions',
-  'trackableOptions',
-  'routines',
-  'routineItems',
-  'eventDefinitions',
-  'eventFields',
-  'logRecords',
-  'observations',
-  'observationSelections',
-  'eventDailyAssertions',
-  'relationships',
-  'relationshipAssessments',
-  'settings',
-  'syncMetadata',
-]
-
 function createStores(): RepositoryStores {
   return Object.fromEntries(
-    collectionNames.map((collection) => [collection, new Map()]),
+    repositoryCollections.map((collection) => [collection, new Map()]),
   ) as RepositoryStores
 }
 

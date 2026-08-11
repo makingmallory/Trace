@@ -62,6 +62,8 @@ export interface TrackableVersion extends SyncableEntity {
 }
 
 export interface TrackableOption extends SyncableEntity {
+  /** Stable identity used by observations across Trackable versions. */
+  optionId: EntityId
   trackableId: EntityId
   trackableVersion: number
   storedValue: string

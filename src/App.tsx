@@ -4,7 +4,17 @@ import { HistoryScreen } from './features/history/HistoryScreen.tsx'
 import { HomeScreen } from './features/home/HomeScreen.tsx'
 import { SettingsScreen } from './features/settings/SettingsScreen.tsx'
 import { SyncSpikeScreen } from './features/sync-spike/SyncSpikeScreen.tsx'
-import { TrackablesScreen } from './features/trackables/TrackablesScreen.tsx'
+import {
+  AddTrackableScreen,
+  ArchivedTrackablesScreen,
+  CategoriesScreen,
+  CustomTrackableScreen,
+  EditTrackableScreen,
+  ManageTrackablesScreen,
+  StarterPacksScreen,
+  TrackableLibraryScreen,
+  TrackablesScreen,
+} from './features/trackables/TrackablesScreen.tsx'
 import { TrendsScreen } from './features/trends/TrendsScreen.tsx'
 
 function App() {
@@ -15,6 +25,15 @@ function App() {
         <Route path="trends" element={<TrendsScreen />} />
         <Route path="history" element={<HistoryScreen />} />
         <Route path="trackables" element={<TrackablesScreen />} />
+        <Route path="trackables/add" element={<AddTrackableScreen />} />
+        <Route path="trackables/library" element={<TrackableLibraryScreen />} />
+        <Route path="trackables/presets" element={<Navigate to="/trackables/library" replace />} />
+        <Route path="trackables/packs" element={<StarterPacksScreen />} />
+        <Route path="trackables/custom" element={<CustomTrackableScreen />} />
+        <Route path="trackables/edit/:trackableId" element={<EditTrackableScreen />} />
+        <Route path="trackables/manage" element={<ManageTrackablesScreen />} />
+        <Route path="trackables/manage/categories" element={<CategoriesScreen />} />
+        <Route path="trackables/manage/archived" element={<ArchivedTrackablesScreen />} />
         <Route path="settings" element={<SettingsScreen />} />
         <Route path="sync-spike" element={<SyncSpikeScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />

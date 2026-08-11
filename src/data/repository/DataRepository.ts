@@ -38,6 +38,25 @@ export interface RepositoryCollectionMap {
 
 export type RepositoryCollection = keyof RepositoryCollectionMap
 
+export const repositoryCollections: readonly RepositoryCollection[] = [
+  'categories',
+  'trackables',
+  'trackableVersions',
+  'trackableOptions',
+  'routines',
+  'routineItems',
+  'eventDefinitions',
+  'eventFields',
+  'logRecords',
+  'observations',
+  'observationSelections',
+  'eventDailyAssertions',
+  'relationships',
+  'relationshipAssessments',
+  'settings',
+  'syncMetadata',
+]
+
 export interface DataRepository {
   getById<K extends RepositoryCollection>(
     collection: K,
