@@ -47,6 +47,8 @@ export type RuleOperator =
   | 'greaterThan'
   | 'lessThan'
   | 'contains'
+  | 'anyOf'
+  | 'containsAny'
   | 'isAnswered'
 
 export interface ConditionalRule {
@@ -72,6 +74,7 @@ export type RelationshipProvenance =
 export type ObservationValue =
   | { kind: 'scale'; value: number }
   | { kind: 'boolean'; value: boolean }
+  | { kind: 'choice'; value: null }
   | { kind: 'number'; value: number; unit?: string }
   | { kind: 'duration'; value: number; unit: 'minutes' }
   | { kind: 'time'; value: string }

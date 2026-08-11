@@ -10,6 +10,16 @@ export function SettingsScreen() {
     >
       <div className="developer-card">
         <div>
+          <p className="developer-card__label">Tracking</p>
+          <h2>Nightly Check-In</h2>
+          <p>Choose, order, and configure the questions in your daily routine.</p>
+        </div>
+        <Link className="button-link" to="/settings/nightly-check-in">
+          Configure routine
+        </Link>
+      </div>
+      <div className="developer-card">
+        <div>
           <p className="developer-card__label">Milestone 0.5 developer tool</p>
           <h2>Google sync spike</h2>
           <p>

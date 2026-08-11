@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './app/AppShell.tsx'
 import { HistoryScreen } from './features/history/HistoryScreen.tsx'
+import { CheckInScreen } from './features/checkin/CheckInScreen.tsx'
+import { RoutineSettingsScreen } from './features/checkin/RoutineSettingsScreen.tsx'
 import { HomeScreen } from './features/home/HomeScreen.tsx'
 import { SettingsScreen } from './features/settings/SettingsScreen.tsx'
 import { SyncSpikeScreen } from './features/sync-spike/SyncSpikeScreen.tsx'
@@ -22,6 +24,7 @@ function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<HomeScreen />} />
+        <Route path="check-in" element={<CheckInScreen />} />
         <Route path="trends" element={<TrendsScreen />} />
         <Route path="history" element={<HistoryScreen />} />
         <Route path="trackables" element={<TrackablesScreen />} />
@@ -35,6 +38,7 @@ function App() {
         <Route path="trackables/manage/categories" element={<CategoriesScreen />} />
         <Route path="trackables/manage/archived" element={<ArchivedTrackablesScreen />} />
         <Route path="settings" element={<SettingsScreen />} />
+        <Route path="settings/nightly-check-in" element={<RoutineSettingsScreen />} />
         <Route path="sync-spike" element={<SyncSpikeScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
