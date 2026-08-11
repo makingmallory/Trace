@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="trace_background">#FFFCFE</color>
+    <color name="trace_surface">#FFF7FC</color>
+    <color name="trace_primary">#8C4FB5</color>
+    <color name="trace_primary_strong">#5F2E75</color>
+    <color name="trace_text">#25172B</color>
+    <color name="trace_muted_text">#6F6074</color>
+    <color name="trace_on_primary">#FFFFFF</color>
+</resources>

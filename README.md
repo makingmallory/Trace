@@ -4,7 +4,7 @@ Trace is a flexible, local-first personal health and pattern tracker. It support
 
 ## Current status
 
-Milestones 0–5 are implemented through Production Sync. Trace keeps IndexedDB as its offline-first working copy and can maintain a normalized, versioned replica in a user-owned Google Sheet.
+Milestones 0–7 are implemented through Android packaging and the first home-screen widget. Trace keeps IndexedDB as its offline-first working copy and can maintain a normalized, versioned replica in a user-owned Google Sheet.
 
 The current implementation includes:
 
@@ -16,11 +16,17 @@ The current implementation includes:
 - production Google Sheets `SyncProvider` batching, incremental checkpoints, conflicts, tombstones, reconnect recovery, and status
 - full-fidelity JSON backup export
 - a bound production Apps Script endpoint under `apps-script/`
+- Trends V1 summaries and time-series views
+- a Capacitor Android application (`app.trace.tracker`) with native back/deep-link handling
+- Android JSON sharing, system-browser external links, and a compact quick-action widget
+- launcher, adaptive, splash, PWA, and in-app branding generated from `Trace.png`
 - domain, persistence, protocol, and reconciliation tests
 
-Trends, predictions, Android packaging/widget work, and advanced analytics remain deferred to later milestones.
+Predictions, advanced analytics, configurable widget shortcuts, and broader polish remain deferred to later milestones.
 
 See [Google Sheets backup setup](docs/google-sync-setup.md) for setup, recovery, workbook format, and the important anonymous-deployment security limitation. The [Milestone 0.5 sync spike](docs/google-sync-spike.md) remains only as a historical record.
+
+See [Android development and widget architecture](docs/android.md) for native setup, build commands, data boundaries, and current device-testing limitations.
 
 ## Setup
 

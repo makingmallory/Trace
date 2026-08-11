@@ -7,6 +7,7 @@ import { GoogleSheetsAppsScriptSyncProvider } from '../../data/sync/google/Googl
 import type { SyncConnection } from '../../data/sync/SyncConnectionStore.ts'
 import { SYNC_METADATA_ID } from '../../data/sync/SyncService.ts'
 import { serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
+import { shareTextFile } from '../../platform/nativeFiles.ts'
 
 type SetupMode = 'new' | 'existing' | null
 type RunState = 'idle' | 'connecting' | 'syncing' | 'success' | 'error'
@@ -80,9 +81,15 @@ export function SettingsScreen() {
   }
 
   async function exportBackup() {
-    const backup = await createTraceBackup(new IndexedDbDataRepository())
-    downloadTraceBackup(backup)
-    setState('success'); setMessage(`Exported ${backup.records.length} records as a full-fidelity JSON backup.`)
+    try {
+      const backup = await createTraceBackup(new IndexedDbDataRepository())
+      const fileName = `trace-backup-${backup.createdAt.slice(0, 10)}.json`
+      const shared = await shareTextFile(fileName, JSON.stringify(backup, null, 2))
+      if (!shared) downloadTraceBackup(backup)
+      setState('success'); setMessage(`Exported ${backup.records.length} records as a full-fidelity JSON backup.`)
+    } catch (error) {
+      setState('error'); setMessage(error instanceof Error ? `Could not share the backup: ${error.message}` : 'Could not share the backup. Your local data is unchanged.')
+    }
   }
 
   return (
