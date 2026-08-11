@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { DataRole, EventTimingMode, Observation, ObservationAnswer, ObservationOptionSelection, RoutineItem } from '../../domain/models/index.ts'
 import type { EventAnswerDraft, EventDefinitionDetails, EventDefinitionDraft, EventLibrary } from '../../domain/events/EventEngine.ts'
 import { EventValidationError } from '../../domain/events/EventEngine.ts'
@@ -8,7 +8,7 @@ import { localDateFor, currentTimeZone } from '../../domain/checkin/CheckInEngin
 import { builtInIcons, iconGlyph } from '../../presets/iconLibrary.ts'
 import { QuestionInput } from '../checkin/QuestionInput.tsx'
 import { eventEngine } from './eventEngine.ts'
-import { endpointDraftFromInput, type EndpointInputState } from './eventTimingInput.ts'
+import { endpointDraftFromInput, endpointInputFromRecord, type EndpointInputState } from './eventTimingInput.ts'
 import { homeEventTiming } from './homeEventSummary.ts'
 
 const timingLabels: Record<EventTimingMode, string> = { point: 'Point in time', duration: 'Duration', either: 'Point or duration', dayOnly: 'Day only' }
@@ -21,6 +21,8 @@ const roles: readonly { value: DataRole; label: string }[] = [
 function Loading() { return <section className="screen"><p className="save-status">Loading events…</p></section> }
 
 export function QuickLogScreen() {
+  const [searchParams] = useSearchParams()
+  const historyDate = searchParams.get('date') ?? ''
   const [library, setLibrary] = useState<EventLibrary | null>(null)
   const [recent, setRecent] = useState<readonly EventDefinitionDetails[]>([])
   const [query, setQuery] = useState('')
@@ -29,41 +31,62 @@ export function QuickLogScreen() {
   if (!library) return <Loading />
   return <section className="screen event-picker">
     <header className="screen__heading compact-heading"><Link className="back-link" to="/">← Home</Link><p className="eyebrow">Quick Log</p><h1>What happened?</h1><p className="screen__description">Choose an event type, then save it in a few taps.</p></header>
-    {recent.length > 0 && <section className="event-section"><div className="section-heading"><h2>Recent</h2><span>Your latest event types</span></div><div className="event-choice-grid">{recent.map((item) => <EventChoice key={item.definition.id} item={item} />)}</div></section>}
+    {recent.length > 0 && <section className="event-section"><div className="section-heading"><h2>Recent</h2><span>Your latest event types</span></div><div className="event-choice-grid">{recent.map((item) => <EventChoice key={item.definition.id} item={item} historyDate={historyDate} />)}</div></section>}
     <section className="event-section"><div className="section-heading"><h2>All event types</h2><Link to="/events/manage">Manage</Link></div><label className="search-field"><span className="sr-only">Search event types</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" /></label>
-      <div className="event-choice-grid">{results.map((item) => <EventChoice key={item.definition.id} item={item} />)}</div>{results.length === 0 && <p className="empty-copy">No matching event types.</p>}
+      <div className="event-choice-grid">{results.map((item) => <EventChoice key={item.definition.id} item={item} historyDate={historyDate} />)}</div>{results.length === 0 && <p className="empty-copy">No matching event types.</p>}
     </section>
     <Link className="secondary-button event-create-path" to="/events/manage/new">+ Create event type</Link>
   </section>
 }
 
-function EventChoice({ item }: { item: EventDefinitionDetails }) {
-  return <Link className="event-choice" to={`/events/log/${item.definition.id}`}><span aria-hidden="true">{iconGlyph(item.definition.icon)}</span><div><strong>{item.definition.name}</strong><small>{timingLabels[item.definition.timingMode]}</small></div><b aria-hidden="true">→</b></Link>
+function EventChoice({ item, historyDate }: { item: EventDefinitionDetails; historyDate?: string }) {
+  return <Link className="event-choice" to={`/events/log/${item.definition.id}${historyDate ? `?date=${historyDate}` : ''}`}><span aria-hidden="true">{iconGlyph(item.definition.icon)}</span><div><strong>{item.definition.name}</strong><small>{timingLabels[item.definition.timingMode]}</small></div><b aria-hidden="true">→</b></Link>
 }
 
 export function LogEventScreen() {
-  const { eventDefinitionId = '' } = useParams(); const navigate = useNavigate()
+  const { eventDefinitionId = '', recordId = '' } = useParams(); const navigate = useNavigate(); const [searchParams] = useSearchParams()
   const [details, setDetails] = useState<EventDefinitionDetails | null>(null)
   const [answers, setAnswers] = useState<Map<string, EventAnswerDraft>>(new Map())
   const now = useMemo(() => new Date(), [])
-  const initialEndpoint = (): EndpointInputState => ({ localDate: localDateFor(now), localTime: '', timeOfDay: null, timeOfDayExpanded: false })
+  const requestedDate = searchParams.get('date') || localDateFor(now)
+  const initialEndpoint = (): EndpointInputState => ({ localDate: requestedDate, localTime: '', timeOfDay: null, timeOfDayExpanded: false })
   const [start, setStart] = useState<EndpointInputState>(initialEndpoint)
   const [end, setEnd] = useState<EndpointInputState>(initialEndpoint)
   const [occurrence, setOccurrence] = useState<'point' | 'duration'>('point')
   const [endsSameDay, setEndsSameDay] = useState(true); const [ongoing, setOngoing] = useState(false)
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')
-  useEffect(() => { void eventEngine.getDetails(eventDefinitionId).then((item) => { setDetails(item); if (item.definition.timingMode === 'duration') setOccurrence('duration') }).catch((caught) => setError(caught instanceof Error ? caught.message : 'Could not load this event type.')) }, [eventDefinitionId])
+  useEffect(() => {
+    const load = async () => {
+      if (recordId) {
+        const existing = await eventEngine.getLoggedEvent(recordId)
+        setDetails(existing.details)
+        setOccurrence(existing.record.eventTimingKind ?? 'point')
+        setStart(endpointInputFromRecord(existing.record, 'start'))
+        setEnd(endpointInputFromRecord(existing.record, 'end'))
+        setEndsSameDay(!existing.record.endLocalDate || existing.record.endLocalDate === existing.record.localDate)
+        setOngoing(existing.record.ongoing)
+        setAnswers(new Map(existing.observations.map((observation) => [observation.trackableId, { trackableId: observation.trackableId, answer: observation.answer, selectedOptionIds: existing.selections.filter((item) => item.observationId === observation.id).map((item) => item.optionId) }])))
+        return
+      }
+      const item = await eventEngine.getDetails(eventDefinitionId)
+      setDetails(item)
+      if (item.definition.timingMode === 'duration') setOccurrence('duration')
+    }
+    void load().catch((caught) => setError(caught instanceof Error ? caught.message : 'Could not load this event type.'))
+  }, [eventDefinitionId, recordId])
   if (!details) return error ? <section className="screen"><p className="form-error">{error}</p><Link to="/events">Back to events</Link></section> : <Loading />
   function saveAnswer(trackableId: string, answer: EventAnswerDraft) { setAnswers((current) => new Map(current).set(trackableId, answer)) }
   async function submit(event: FormEvent) {
+    if (!details) return
     event.preventDefault(); setBusy(true); setError('')
     try {
       const endInput = endsSameDay ? { ...end, localDate: start.localDate } : end
-      const result = await eventEngine.logEvent({ eventDefinitionId, timing: { occurrence, start: endpointDraftFromInput(start), ...(occurrence === 'duration' && !ongoing ? { end: endpointDraftFromInput(endInput) } : {}), ongoing: occurrence === 'duration' && ongoing, timezone: currentTimeZone() }, answers: [...answers.values()] })
-      navigate('/', { replace: true, state: { loggedEventId: result.record.id } })
+      const draft = { eventDefinitionId: details.definition.id, timing: { occurrence, start: endpointDraftFromInput(start), ...(occurrence === 'duration' && !ongoing ? { end: endpointDraftFromInput(endInput) } : {}), ongoing: occurrence === 'duration' && ongoing, timezone: currentTimeZone() }, answers: [...answers.values()] }
+      const result = recordId ? await eventEngine.updateEvent(recordId, draft) : await eventEngine.logEvent(draft)
+      navigate(recordId || searchParams.get('date') ? `/history?date=${result.record.localDate}` : '/', { replace: true, state: { loggedEventId: result.record.id } })
     } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this event.') } finally { setBusy(false) }
   }
-  return <section className="screen log-event-screen"><header className="event-log-header"><Link className="back-link" to="/events">← Events</Link><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><p className="eyebrow">Log event</p><h1>{details.definition.name}</h1></div></div></header>
+  return <section className="screen log-event-screen"><header className="event-log-header"><Link className="back-link" to={recordId ? `/history?date=${start.localDate}` : '/events'}>← {recordId ? 'History' : 'Events'}</Link><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><p className="eyebrow">{recordId ? 'Edit historical event' : 'Log event'}</p><h1>{details.definition.name}</h1></div></div></header>
     <form className="event-log-form" onSubmit={submit}>
       <section className="event-timing-card"><h2>When?</h2>
         {details.definition.timingMode === 'either' && <fieldset className="occurrence-choice"><legend>Event shape</legend><div><button type="button" aria-pressed={occurrence === 'point'} onClick={() => setOccurrence('point')}>Point</button><button type="button" aria-pressed={occurrence === 'duration'} onClick={() => setOccurrence('duration')}>Duration</button></div></fieldset>}
@@ -78,19 +101,19 @@ export function LogEventScreen() {
         return <article className="question-card" key={field.field.id}><div className="question-card__heading"><span aria-hidden="true">{iconGlyph(field.trackable.icon)}</span><div><h3 id={`event-field-${field.field.id}`}>{field.version.name}</h3>{field.version.description && <p>{field.version.description}</p>}</div></div><QuestionInput question={{ item, trackable: field.trackable, version: field.version, options: field.options, category: field.category }} observation={observation} selections={selections} onSave={(next) => saveAnswer(field.trackable.id, { trackableId: field.trackable.id, answer: next.answer, selectedOptionIds: next.selectedOptionIds })} /></article>
       })}</section>}
       {details.fields.length === 0 && <p className="precision-note">This event type has no extra fields, so it is ready to save now. You can add Trackables from Manage event types.</p>}
-      {error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button finish-button" disabled={busy}>{busy ? 'Saving…' : `Save ${details.definition.name}`}</button>
+      {error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button finish-button" disabled={busy}>{busy ? 'Saving…' : recordId ? 'Save changes' : `Save ${details.definition.name}`}</button>
     </form>
   </section>
 }
 
 function PointTimingInput({ value, onChange, dayOnly }: { value: EndpointInputState; onChange: (value: EndpointInputState) => void; dayOnly: boolean }) {
-  return <div className="point-timing"><div className="timing-fields timing-fields--point"><DateInput label="Date" value={value.localDate} onChange={(localDate) => onChange({ ...value, localDate })} />{!dayOnly && <TimeInput label="Time (optional)" value={value.localTime} onChange={(localTime) => onChange({ ...value, localTime, ...(localTime ? { timeOfDay: null, timeOfDayExpanded: false } : {}) })} />}</div>{!dayOnly && <TimeOfDayChoices value={value} onChange={onChange} />}</div>
+  return <div className="point-timing"><div className="timing-fields timing-fields--point"><DateInput label="Date" value={value.localDate} onChange={(localDate) => onChange({ ...value, localDate })} />{!dayOnly && <TimeInput label="Time (optional)" value={value.localTime} onChange={(localTime) => onChange({ ...value, localTime, blankPrecision: 'day', ...(localTime ? { timeOfDay: null, timeOfDayExpanded: false } : {}) })} />}</div>{!dayOnly && <TimeOfDayChoices value={value} onChange={onChange} />}</div>
 }
 
 function DurationTimingInput({ start, end, endsSameDay, ongoing, onStartChange, onEndChange, onEndsSameDayChange, onOngoingChange }: { start: EndpointInputState; end: EndpointInputState; endsSameDay: boolean; ongoing: boolean; onStartChange: (value: EndpointInputState) => void; onEndChange: (value: EndpointInputState) => void; onEndsSameDayChange: (value: boolean) => void; onOngoingChange: (value: boolean) => void }) {
-  return <div className="duration-timing"><fieldset className="timing-endpoint"><legend>Start</legend><div className="timing-fields"><DateInput label="Start date" value={start.localDate} onChange={(localDate) => onStartChange({ ...start, localDate })} /><TimeInput label="Start time (optional)" value={start.localTime} onChange={(localTime) => onStartChange({ ...start, localTime, ...(localTime ? { timeOfDay: null, timeOfDayExpanded: false } : {}) })} /></div><TimeOfDayChoices value={start} onChange={onStartChange} /></fieldset>
+  return <div className="duration-timing"><fieldset className="timing-endpoint"><legend>Start</legend><div className="timing-fields"><DateInput label="Start date" value={start.localDate} onChange={(localDate) => onStartChange({ ...start, localDate })} /><TimeInput label="Start time (optional)" value={start.localTime} onChange={(localTime) => onStartChange({ ...start, localTime, blankPrecision: 'day', ...(localTime ? { timeOfDay: null, timeOfDayExpanded: false } : {}) })} /></div><TimeOfDayChoices value={start} onChange={onStartChange} /></fieldset>
     <div className="duration-options"><label className="toggle-row"><input type="checkbox" checked={ongoing} onChange={(event) => onOngoingChange(event.target.checked)} /><span>Ongoing</span></label>{!ongoing && <label className="toggle-row"><input type="checkbox" checked={endsSameDay} onChange={(event) => onEndsSameDayChange(event.target.checked)} /><span>Ends same day</span></label>}</div>
-    {!ongoing && <fieldset className="timing-endpoint"><legend>End</legend><div className={`timing-fields ${endsSameDay ? 'timing-fields--time-only' : ''}`}>{!endsSameDay && <DateInput label="End date" min={start.localDate} value={end.localDate} onChange={(localDate) => onEndChange({ ...end, localDate })} />}<TimeInput label="End time (optional)" value={end.localTime} onChange={(localTime) => onEndChange({ ...end, localTime, ...(localTime ? { timeOfDay: null, timeOfDayExpanded: false } : {}) })} /></div><TimeOfDayChoices value={end} onChange={onEndChange} /></fieldset>}
+    {!ongoing && <fieldset className="timing-endpoint"><legend>End</legend><div className={`timing-fields ${endsSameDay ? 'timing-fields--time-only' : ''}`}>{!endsSameDay && <DateInput label="End date" min={start.localDate} value={end.localDate} onChange={(localDate) => onEndChange({ ...end, localDate })} />}<TimeInput label="End time (optional)" value={end.localTime} onChange={(localTime) => onEndChange({ ...end, localTime, blankPrecision: 'day', ...(localTime ? { timeOfDay: null, timeOfDayExpanded: false } : {}) })} /></div><TimeOfDayChoices value={end} onChange={onEndChange} /></fieldset>}
   </div>
 }
 
@@ -104,9 +127,9 @@ function TimeInput({ label, value, onChange }: { label: string; value: string; o
 
 function TimeOfDayChoices({ value, onChange }: { value: EndpointInputState; onChange: (value: EndpointInputState) => void }) {
   const selected = value.timeOfDay ? timeOfDayDefinitions.find((item) => item.value === value.timeOfDay) : undefined
-  if (selected && !value.timeOfDayExpanded) return <div className="time-of-day-selected"><button type="button" className="time-of-day-card is-selected" aria-label={`${selected.label}, ${selected.conceptualRange}. Change time of day`} onClick={() => onChange({ ...value, timeOfDayExpanded: true })}><span aria-hidden="true">{selected.icon}</span><strong>{selected.label}</strong><small>{selected.conceptualRange}</small></button><button type="button" className="text-button" onClick={() => onChange({ ...value, timeOfDay: null })}>Clear</button></div>
+  if (selected && !value.timeOfDayExpanded) return <div className="time-of-day-selected"><button type="button" className="time-of-day-card is-selected" aria-label={`${selected.label}, ${selected.conceptualRange}. Change time of day`} onClick={() => onChange({ ...value, timeOfDayExpanded: true })}><span aria-hidden="true">{selected.icon}</span><strong>{selected.label}</strong><small>{selected.conceptualRange}</small></button><button type="button" className="text-button" onClick={() => onChange({ ...value, timeOfDay: null, blankPrecision: 'day' })}>Clear</button></div>
   if (!value.timeOfDayExpanded) return <button type="button" className="time-of-day-trigger" onClick={() => onChange({ ...value, timeOfDayExpanded: true })}>Not sure of the exact time? <strong>Use time of day</strong></button>
-  return <fieldset className="time-of-day-choices"><legend>Choose a time of day</legend><div>{timeOfDayDefinitions.map((item) => <button type="button" className="time-of-day-card" aria-pressed={value.timeOfDay === item.value} key={item.value} onClick={() => onChange({ ...value, localTime: '', timeOfDay: item.value, timeOfDayExpanded: false })}><span aria-hidden="true">{item.icon}</span><strong>{item.label}</strong><small>{item.conceptualRange}</small></button>)}</div><button type="button" className="text-button" onClick={() => onChange({ ...value, timeOfDayExpanded: false })}>Cancel</button></fieldset>
+  return <fieldset className="time-of-day-choices"><legend>Choose a time of day</legend><div>{timeOfDayDefinitions.map((item) => <button type="button" className="time-of-day-card" aria-pressed={value.timeOfDay === item.value} key={item.value} onClick={() => onChange({ ...value, localTime: '', timeOfDay: item.value, timeOfDayExpanded: false, blankPrecision: 'day' })}><span aria-hidden="true">{item.icon}</span><strong>{item.label}</strong><small>{item.conceptualRange}</small></button>)}</div><button type="button" className="text-button" onClick={() => onChange({ ...value, timeOfDayExpanded: false })}>Cancel</button></fieldset>
 }
 
 function localObservation(trackableId: string, trackableVersion: number, answer: ObservationAnswer): Observation { return { id: `draft-${trackableId}`, logRecordId: 'draft', trackableId, trackableVersion, answer, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 } }

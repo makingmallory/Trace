@@ -93,6 +93,41 @@ function validateEndpoint(label: string, endpoint: EventEndpointDraft, issues: s
   if (endpoint.precision !== 'timeOfDay' && endpoint.timeOfDay) issues.push(`${label} time-of-day bucket is only valid for Time of day.`)
 }
 
+function prepareEventTiming(details: EventDefinitionDetails, timing: EventTimingDraft) {
+  const issues: string[] = []
+  validateEndpoint('Start', timing.start, issues)
+  if (details.definition.timingMode === 'dayOnly' && (timing.start.precision !== 'day' || timing.occurrence !== 'point')) issues.push('Day-only events use a known date without a clock time.')
+  if (details.definition.timingMode === 'point' && timing.occurrence !== 'point') issues.push('This event type is point-in-time.')
+  if (details.definition.timingMode === 'duration' && timing.occurrence !== 'duration') issues.push('This event type records a duration.')
+  if (timing.occurrence === 'point' && (timing.end || timing.ongoing)) issues.push('Point events cannot have an end.')
+  if (timing.occurrence === 'duration' && !timing.ongoing && !timing.end) issues.push('Choose an end or mark this event ongoing.')
+  if (timing.occurrence === 'duration' && !timing.ongoing && timing.end) validateEndpoint('End', timing.end, issues)
+  if (timing.end && timing.end.localDate < timing.start.localDate) issues.push('End date must be on or after start date.')
+  if (issues.length) throw new EventValidationError(issues)
+  const startTime = timing.start.precision === 'exact' ? localIso(timing.start.localDate, timing.start.localTime!) : null
+  const ended = timing.occurrence === 'duration' && !timing.ongoing ? timing.end! : null
+  const endTime = ended?.precision === 'exact' ? localIso(ended.localDate, ended.localTime!) : null
+  if (startTime && endTime && endTime < startTime) throw new EventValidationError(['End time must be after start time.'])
+  return {
+    eventTimingKind: timing.occurrence,
+    localDate: timing.start.localDate,
+    startTimePrecision: timing.start.precision,
+    startTime,
+    startTimeOfDay: timing.start.precision === 'timeOfDay' ? timing.start.timeOfDay! : null,
+    endLocalDate: ended?.localDate ?? null,
+    endTimePrecision: ended?.precision ?? null,
+    endTime,
+    endTimeOfDay: ended?.precision === 'timeOfDay' ? ended.timeOfDay! : null,
+    ongoing: timing.occurrence === 'duration' && Boolean(timing.ongoing),
+    timezone: startTime || endTime ? timing.timezone : null,
+  } as const
+}
+
+function validateEventAnswers(details: EventDefinitionDetails, answers: readonly EventAnswerDraft[]): void {
+  const fieldIds = new Set(details.fields.map((item) => item.trackable.id))
+  if (answers.some((item) => !fieldIds.has(item.trackableId))) throw new EventValidationError(['An answer does not belong to this event type.'])
+}
+
 export class EventEngine {
   private initialization: Promise<void> | null = null
   private readonly repository: DataRepository
@@ -228,33 +263,11 @@ export class EventEngine {
   async logEvent(draft: LogEventDraft): Promise<LoggedEvent> {
     const details = await this.getDetails(draft.eventDefinitionId)
     if (!details.definition.active) throw new EventValidationError(['Archived event types cannot be logged.'])
-    const { timing } = draft
-    const issues: string[] = []
-    validateEndpoint('Start', timing.start, issues)
-    if (details.definition.timingMode === 'dayOnly' && (timing.start.precision !== 'day' || timing.occurrence !== 'point')) issues.push('Day-only events use a known date without a clock time.')
-    if (details.definition.timingMode === 'point' && timing.occurrence !== 'point') issues.push('This event type is point-in-time.')
-    if (details.definition.timingMode === 'duration' && timing.occurrence !== 'duration') issues.push('This event type records a duration.')
-    if (timing.occurrence === 'point' && (timing.end || timing.ongoing)) issues.push('Point events cannot have an end.')
-    if (timing.occurrence === 'duration' && !timing.ongoing && !timing.end) issues.push('Choose an end or mark this event ongoing.')
-    if (timing.occurrence === 'duration' && !timing.ongoing && timing.end) validateEndpoint('End', timing.end, issues)
-    if (timing.end && timing.end.localDate < timing.start.localDate) issues.push('End date must be on or after start date.')
-    const fieldIds = new Set(details.fields.map((item) => item.trackable.id))
-    if (draft.answers.some((item) => !fieldIds.has(item.trackableId))) issues.push('An answer does not belong to this event type.')
-    if (issues.length) throw new EventValidationError(issues)
-
+    validateEventAnswers(details, draft.answers)
+    const timingFields = prepareEventTiming(details, draft.timing)
     const timestamp = this.timestamp()
-    const startTime = timing.start.precision === 'exact' ? localIso(timing.start.localDate, timing.start.localTime!) : null
-    const ended = timing.occurrence === 'duration' && !timing.ongoing ? timing.end! : null
-    const endTime = ended?.precision === 'exact' ? localIso(ended.localDate, ended.localTime!) : null
-    if (startTime && endTime && endTime < startTime) throw new EventValidationError(['End time must be after start time.'])
     const record: LogRecord = {
-      id: this.createId(), recordKind: 'event', eventDefinitionId: details.definition.id, eventTimingKind: timing.occurrence,
-      localDate: timing.start.localDate, startTimePrecision: timing.start.precision, startTime,
-      startTimeOfDay: timing.start.precision === 'timeOfDay' ? timing.start.timeOfDay! : null,
-      endLocalDate: ended?.localDate ?? null, endTimePrecision: ended?.precision ?? null, endTime,
-      endTimeOfDay: ended?.precision === 'timeOfDay' ? ended.timeOfDay! : null,
-      ongoing: timing.occurrence === 'duration' && Boolean(timing.ongoing),
-      timezone: startTime || endTime ? timing.timezone : null,
+      id: this.createId(), recordKind: 'event', eventDefinitionId: details.definition.id, ...timingFields,
       status: 'completed', source: draft.source ?? 'app', createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
     }
     const observations: Observation[] = []
@@ -275,6 +288,49 @@ export class EventEngine {
     await this.repository.save('logRecords', record)
     await this.repository.saveMany('observations', observations)
     await this.repository.saveMany('observationSelections', selections)
+    return { record, observations, selections }
+  }
+
+  async getLoggedEvent(recordId: string): Promise<LoggedEvent & { details: EventDefinitionDetails }> {
+    const record = await this.repository.getById('logRecords', recordId)
+    if (!record || record.recordKind !== 'event' || !record.eventDefinitionId || record.deletedAt) throw new EventValidationError(['Event was not found.'])
+    const details = await this.getDetails(record.eventDefinitionId)
+    const observations = (await this.repository.getAll('observations')).filter((item) => item.logRecordId === record.id && !item.deletedAt)
+    const ids = new Set(observations.map((item) => item.id))
+    const selections = (await this.repository.getAll('observationSelections')).filter((item) => ids.has(item.observationId) && !item.deletedAt)
+    return { record, observations, selections, details }
+  }
+
+  async updateEvent(recordId: string, draft: LogEventDraft): Promise<LoggedEvent> {
+    const existing = await this.getLoggedEvent(recordId)
+    if (existing.record.eventDefinitionId !== draft.eventDefinitionId) throw new EventValidationError(['An event cannot change its event type.'])
+    validateEventAnswers(existing.details, draft.answers)
+    const timingFields = prepareEventTiming(existing.details, draft.timing)
+    const timestamp = this.timestamp()
+    const record: LogRecord = { ...existing.record, ...timingFields, source: draft.source ?? existing.record.source, updatedAt: timestamp, revision: existing.record.revision + 1 }
+    await this.repository.save('logRecords', record)
+
+    const observations: Observation[] = []
+    const selections: ObservationOptionSelection[] = []
+    const allSelections = await this.repository.getAll('observationSelections')
+    for (const field of existing.details.fields) {
+      const saved = draft.answers.find((item) => item.trackableId === field.trackable.id) ?? { trackableId: field.trackable.id, answer: { state: 'unanswered' as const } }
+      const previous = existing.observations.find((item) => item.trackableId === field.trackable.id)
+      const observation: Observation = previous
+        ? { ...previous, answer: saved.answer, deletedAt: null, updatedAt: timestamp, revision: previous.revision + 1 }
+        : { id: this.createId(), logRecordId: record.id, trackableId: field.trackable.id, trackableVersion: field.field.trackableVersion, answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+      observations.push(observation)
+      await this.repository.save('observations', observation)
+      const wanted = new Set(saved.answer.state === 'answered' && saved.answer.value.kind === 'choice' ? saved.selectedOptionIds ?? [] : [])
+      const previousSelections = allSelections.filter((item) => item.observationId === observation.id)
+      await this.repository.saveMany('observationSelections', previousSelections.filter((item) => !item.deletedAt && !wanted.has(item.optionId)).map((item) => ({ ...item, deletedAt: timestamp, updatedAt: timestamp, revision: item.revision + 1 })))
+      for (const optionId of wanted) {
+        const prior = previousSelections.find((item) => item.optionId === optionId)
+        const selection = prior ? { ...prior, deletedAt: null, updatedAt: timestamp, revision: prior.revision + 1 } : { id: this.createId(), observationId: observation.id, optionId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+        selections.push(selection)
+        await this.repository.save('observationSelections', selection)
+      }
+    }
     return { record, observations, selections }
   }
 

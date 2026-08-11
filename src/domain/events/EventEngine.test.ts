@@ -116,6 +116,14 @@ describe('EventEngine logging', () => {
     expect(logged.observations.find((item) => item.trackableId === severity.trackable.id)?.answer).toEqual({ state: 'answered', value: { kind: 'scale', value: 0 } })
     expect(logged.observations.find((item) => item.trackableId === notes.trackable.id)?.answer).toEqual({ state: 'unanswered' })
   })
+
+  it('edits and moves a historical event without changing identity or creating a duplicate', async () => {
+    const repository = new InMemoryDataRepository(); const { events } = await setup(repository)
+    const logged = await events.logEvent({ eventDefinitionId: 'preset.event.travel', timing: { occurrence: 'duration', start: { localDate: '2026-08-01', precision: 'day' }, end: { localDate: '2026-08-03', precision: 'day' }, timezone: null }, answers: [] })
+    const updated = await events.updateEvent(logged.record.id, { eventDefinitionId: 'preset.event.travel', timing: { occurrence: 'duration', start: { localDate: '2026-07-31', precision: 'timeOfDay', timeOfDay: 'evening' }, end: { localDate: '2026-08-02', precision: 'exact', localTime: '09:17' }, timezone: 'America/Chicago' }, answers: [] })
+    expect(updated.record).toMatchObject({ id: logged.record.id, localDate: '2026-07-31', startTimePrecision: 'timeOfDay', startTimeOfDay: 'evening', endLocalDate: '2026-08-02', endTimePrecision: 'exact', revision: 2 })
+    expect((await repository.getAll('logRecords')).filter((item) => item.recordKind === 'event')).toHaveLength(1)
+  })
 })
 
 describe('event IndexedDB persistence', () => {

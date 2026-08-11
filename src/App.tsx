@@ -26,8 +26,10 @@ function App() {
       <Route element={<AppShell />}>
         <Route index element={<HomeScreen />} />
         <Route path="check-in" element={<CheckInScreen />} />
+        <Route path="history/check-in/:localDate" element={<CheckInScreen />} />
         <Route path="events" element={<QuickLogScreen />} />
         <Route path="events/log/:eventDefinitionId" element={<LogEventScreen />} />
+        <Route path="history/events/:recordId/edit" element={<LogEventScreen />} />
         <Route path="events/manage" element={<ManageEventsScreen />} />
         <Route path="events/manage/new" element={<EventEditorScreen />} />
         <Route path="events/manage/:eventDefinitionId" element={<EventEditorScreen />} />

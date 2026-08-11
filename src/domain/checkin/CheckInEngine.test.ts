@@ -93,6 +93,30 @@ describe('CheckInEngine daily records', () => {
     expect(await repository.getAll('logRecords')).toHaveLength(1)
   })
 
+  it('coalesces concurrent opens so development remounts cannot duplicate a daily record', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('score')
+    const [first, second] = await Promise.all([
+      engine.getOrCreateToday('2026-08-10', 'America/Chicago'),
+      engine.getOrCreateToday('2026-08-10', 'America/Chicago'),
+    ])
+    expect(second.record.id).toBe(first.record.id)
+    expect(await repository.getAll('logRecords')).toHaveLength(1)
+  })
+
+  it('edits a historical check-in in place without creating a second daily record', async () => {
+    const { engine, repository } = await setup()
+    const item = await engine.addTrackable('score')
+    const historical = await engine.getOrCreateToday('2026-07-04', 'America/Chicago')
+    await engine.saveAnswer(historical.record.id, 'score', { answer: { state: 'answered', value: { kind: 'scale', value: 2 } } })
+    await engine.removeTrackable(item.id)
+    const reopened = await engine.getOrCreateToday('2026-07-04', 'America/Chicago')
+    expect(reopened.visibleQuestions.map((question) => question.trackable.id)).toContain('score')
+    const edited = await engine.saveAnswer(reopened.record.id, 'score', { answer: { state: 'answered', value: { kind: 'scale', value: 4 } } })
+    expect(edited.record.id).toBe(historical.record.id)
+    expect((await repository.getAll('logRecords')).filter((item) => item.localDate === '2026-07-04')).toHaveLength(1)
+  })
+
   it('persists and refreshes single-choice and multi-select any-match visibility exactly', async () => {
     const { engine } = await setup()
     await engine.addTrackable('choice')

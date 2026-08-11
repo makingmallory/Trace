@@ -37,10 +37,11 @@ export function formatEndpoint(
   timestamp: string | null,
   bucket: TimeOfDayBucket | null,
   includeDate = false,
+  timezone?: string | null,
 ): string {
   const date = includeDate ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(`${localDate}T12:00:00`)) : ''
   let timing = ''
-  if (precision === 'exact' && timestamp) timing = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp))
+  if (precision === 'exact' && timestamp) timing = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', timeZone: timezone || undefined }).format(new Date(timestamp))
   else if (precision === 'timeOfDay' && bucket) timing = timeOfDayLabel(bucket)
   else if (precision === 'unknown') timing = 'Time unknown'
   else if (!includeDate) timing = 'Date only'
@@ -49,11 +50,11 @@ export function formatEndpoint(
 
 export function formatEventTiming(record: LogRecord): string {
   const duration = record.eventTimingKind === 'duration'
-  if (!duration) return formatEndpoint(record.localDate, record.startTimePrecision, record.startTime, record.startTimeOfDay)
+  if (!duration) return formatEndpoint(record.localDate, record.startTimePrecision, record.startTime, record.startTimeOfDay, false, record.timezone)
   const spansDates = Boolean(record.endLocalDate && record.endLocalDate !== record.localDate)
-  const start = formatEndpoint(record.localDate, record.startTimePrecision, record.startTime, record.startTimeOfDay, spansDates)
+  const start = formatEndpoint(record.localDate, record.startTimePrecision, record.startTime, record.startTimeOfDay, spansDates, record.timezone)
   if (record.ongoing) return `${start} → Ongoing`
   if (!record.endLocalDate || !record.endTimePrecision) return start
-  const end = formatEndpoint(record.endLocalDate, record.endTimePrecision, record.endTime, record.endTimeOfDay, spansDates)
+  const end = formatEndpoint(record.endLocalDate, record.endTimePrecision, record.endTime, record.endTimeOfDay, spansDates, record.timezone)
   return `${start} → ${end}`
 }

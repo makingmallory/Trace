@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import type { CheckInSnapshot, RoutineQuestion, SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
 import { QuestionInput } from './QuestionInput.tsx'
 
 export function CheckInScreen() {
+  const { localDate = '' } = useParams()
+  const historical = /^\d{4}-\d{2}-\d{2}$/.test(localDate)
   const [snapshot, setSnapshot] = useState<CheckInSnapshot | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -14,7 +16,7 @@ export function CheckInScreen() {
   const [savedMessage, setSavedMessage] = useState('')
   const messageTimer = useRef<number | undefined>(undefined)
 
-  useEffect(() => { void checkInEngine.getOrCreateToday().then(setSnapshot).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not open Check-In.')) }, [])
+  useEffect(() => { void checkInEngine.getOrCreateToday(historical ? localDate : undefined).then(setSnapshot).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not open Check-In.')) }, [historical, localDate])
   useEffect(() => () => window.clearTimeout(messageTimer.current), [])
 
   const groups = useMemo(() => {
@@ -69,7 +71,7 @@ export function CheckInScreen() {
     }
   }
 
-  if (error && !snapshot) return <section className="screen"><header className="subpage-header"><Link className="back-link" to="/">← Home</Link><p className="eyebrow">Nightly Check-In</p><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Nightly Check-In</Link></section>
+  if (error && !snapshot) return <section className="screen"><header className="subpage-header"><Link className="back-link" to={historical ? `/history?date=${localDate}` : '/'}>← {historical ? 'History' : 'Home'}</Link><p className="eyebrow">Nightly Check-In</p><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Nightly Check-In</Link></section>
   if (!snapshot) return <div className="screen trackables-loading">Opening today’s Check-In…</div>
 
   const completed = snapshot.record.status === 'completed'
@@ -83,7 +85,7 @@ export function CheckInScreen() {
     : savedMessage
 
   return <section className="screen checkin-screen">
-    <header className="checkin-header"><div><Link className="back-link" to="/">← Home</Link><p className="eyebrow">{snapshot.record.localDate}</p><h1>Nightly Check-In</h1><p className="screen__description">{completed ? 'Today is complete. You can still edit any answer below.' : 'One gentle scroll. Every answer saves to this device as you go.'}</p></div><Link className="manage-link" to="/settings/nightly-check-in">Edit questions</Link></header>
+    <header className="checkin-header"><div><Link className="back-link" to={historical ? `/history?date=${snapshot.record.localDate}` : '/'}>← {historical ? 'History' : 'Home'}</Link><p className="eyebrow">{historical ? 'Editing past date' : snapshot.record.localDate}</p><h1>Nightly Check-In</h1><p className="screen__description">{historical ? `Editing ${snapshot.record.localDate}. Changes stay attached to this original Check-In.` : completed ? 'Today is complete. You can still edit any answer below.' : 'One gentle scroll. Every answer saves to this device as you go.'}</p></div><Link className="manage-link" to="/settings/nightly-check-in">Edit questions</Link></header>
     <div className="save-status" role="status" aria-live="polite">
       <span className={`status-dot status-dot--${snapshot.record.status}`} aria-hidden="true" />
       <strong>{completed ? '✓ Completed' : 'Draft'}</strong>

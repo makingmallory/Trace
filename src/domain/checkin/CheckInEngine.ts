@@ -82,6 +82,7 @@ export class CheckInEngine {
   private readonly repository: DataRepository
   private readonly now: () => Date
   private readonly createId: () => string
+  private readonly dailyLoads = new Map<string, Promise<CheckInSnapshot>>()
 
   constructor(
     repository: DataRepository,
@@ -208,12 +209,23 @@ export class CheckInEngine {
     return item
   }
 
-  async getOrCreateToday(localDate = localDateFor(this.now()), timezone = currentTimeZone()): Promise<CheckInSnapshot> {
+  getOrCreateToday(localDate = localDateFor(this.now()), timezone = currentTimeZone()): Promise<CheckInSnapshot> {
+    const existing = this.dailyLoads.get(localDate)
+    if (existing) return existing
+    const pending = this.openDailyCheckIn(localDate, timezone)
+    this.dailyLoads.set(localDate, pending)
+    const clear = () => { if (this.dailyLoads.get(localDate) === pending) this.dailyLoads.delete(localDate) }
+    void pending.then(clear, clear)
+    return pending
+  }
+
+  private async openDailyCheckIn(localDate: string, timezone: IANATimeZone | null): Promise<CheckInSnapshot> {
     const configuration = await this.getConfiguration()
-    if (!configuration.routine || configuration.questions.length === 0) throw new Error('Set up your Nightly Check-In first.')
+    if (!configuration.routine) throw new Error('Set up your Nightly Check-In first.')
     const records = await this.repository.getAll('logRecords')
     let record = records.find((item) => item.recordKind === 'routine' && item.routineId === configuration.routine!.id && item.localDate === localDate && !item.deletedAt)
     if (!record) {
+      if (configuration.questions.length === 0) throw new Error('Set up your Nightly Check-In first.')
       const timestamp = this.timestamp()
       record = {
         id: this.createId(), recordKind: 'routine', routineId: configuration.routine.id, localDate,
@@ -236,13 +248,21 @@ export class CheckInEngine {
 
   private async snapshot(routine: Routine, record: LogRecord, questions: readonly RoutineQuestion[]): Promise<CheckInSnapshot> {
     const observations = (await this.repository.getAll('observations')).filter((item) => item.logRecordId === record.id && !item.deletedAt)
+    const configuredIds = new Set(questions.map((question) => question.trackable.id))
+    const recordedIds = new Set(observations.map((observation) => observation.trackableId))
+    const [allDefinitions, routineItems] = await Promise.all([this.loadQuestionDefinitions(), this.repository.getAll('routineItems')])
+    const historicalQuestions = allDefinitions.filter((question) => recordedIds.has(question.trackable.id) && !configuredIds.has(question.trackable.id)).flatMap((question): RoutineQuestion[] => {
+      const item = routineItems.find((candidate) => candidate.routineId === routine.id && candidate.target.kind === 'trackable' && candidate.target.trackableId === question.trackable.id)
+      return item ? [{ ...question, item }] : []
+    })
+    const recordQuestions = [...questions, ...historicalQuestions]
     const observationIds = new Set(observations.map((item) => item.id))
     const selections = (await this.repository.getAll('observationSelections')).filter((item) => observationIds.has(item.observationId) && !item.deletedAt)
     const answers = buildRuleAnswers(observations, selections)
     const [versions, options] = await Promise.all([
       this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'),
     ])
-    const historicallyAccurateQuestions = questions.map((question) => {
+    const historicallyAccurateQuestions = recordQuestions.map((question) => {
       const observation = observations.find((item) => item.trackableId === question.trackable.id)
       if (!observation || observation.trackableVersion === question.version.version) return question
       const version = versions.find((item) => item.trackableId === question.trackable.id && item.version === observation.trackableVersion)
