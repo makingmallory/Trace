@@ -1,5 +1,6 @@
 import type { SyncMetadata } from '../../domain/models/index.ts'
 import type { DataRepository, RepositoryWrite } from '../repository/DataRepository.ts'
+import { deduplicateObservationSelections } from '../migrations/deduplicateObservationSelections.ts'
 import type { PushConflict, SyncProvider } from './SyncProvider.ts'
 import {
   deserializeEntity,
@@ -118,6 +119,7 @@ export class SyncService {
       for (const [collection, entities] of remoteWrites) writes.push({ collection, entities } as RepositoryWrite)
       writes.push({ collection: 'syncMetadata', entities: [metadata] })
       await this.repository.saveTransaction(writes)
+      await deduplicateObservationSelections(this.repository)
       await migrateLegacyEvents(this.repository)
 
       const pendingRecords: SyncRecord[] = []

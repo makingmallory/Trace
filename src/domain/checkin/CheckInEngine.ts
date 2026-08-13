@@ -15,12 +15,23 @@ import type {
   TrackableVersion,
   TrackableDailyAssertion,
   TrendTrackingMode,
+  TrackableField,
 } from '../models/index.ts'
-import { buildRuleAnswers, evaluateConditionalRule } from './conditionalRules.ts'
+import { buildEffectiveRuleAnswers, evaluateConditionalRule, type RuleAnswer } from './conditionalRules.ts'
 import { isOccurrenceTrackable } from '../trackables/trackableSemantics.ts'
+import { deduplicateObservationSelections } from '../../data/migrations/deduplicateObservationSelections.ts'
 
 export interface RoutineQuestion {
   item: RoutineItem
+  trackable: Trackable
+  version: TrackableVersion
+  options: readonly TrackableOption[]
+  category: Category
+  fields?: readonly RoutineQuestionField[]
+}
+
+export interface RoutineQuestionField {
+  field: TrackableField
   trackable: Trackable
   version: TrackableVersion
   options: readonly TrackableOption[]
@@ -40,6 +51,10 @@ export interface CheckInSnapshot {
   visibleQuestions: readonly RoutineQuestion[]
   observations: readonly Observation[]
   selections: readonly ObservationOptionSelection[]
+  /** Presentation-only defaults. They are materialized only by successful completion. */
+  defaultAnswers: Readonly<Record<string, SavedAnswer>>
+  /** The values currently presented to the user, with persisted/derived answers taking precedence over defaults. */
+  effectiveAnswers: ReadonlyMap<string, RuleAnswer>
   quickLogSummaries: Readonly<Record<string, number>>
   loggedToday: readonly { trackable: Trackable; version: TrackableVersion; count: number; timing: string | null; recordId: string }[]
 }
@@ -57,6 +72,8 @@ export class OccurrenceConflictError extends Error {
 export interface SavedAnswer {
   answer: ObservationAnswer
   selectedOptionIds?: readonly string[]
+  customChoiceValue?: string
+  promoteCustomChoice?: boolean
   trendValue?: string
 }
 
@@ -144,18 +161,25 @@ export class CheckInEngine {
   }
 
   private async loadQuestionDefinitions(): Promise<readonly RoutineQuestion[]> {
-    const [categories, trackables, versions, options] = await Promise.all([
+    const [categories, trackables, versions, options, fields] = await Promise.all([
       this.repository.getAll('categories'), this.repository.getAll('trackables'),
-      this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'),
+      this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'), this.repository.getAll('trackableFields'),
     ])
     return trackables.filter((trackable) => !trackable.deletedAt).flatMap((trackable): RoutineQuestion[] => {
       const version = versions.find((item) => item.trackableId === trackable.id && item.version === trackable.currentVersion)
       const category = categories.find((item) => item.id === trackable.categoryId)
       if (!version || !category) return []
       const placeholderItem = {} as RoutineItem
+      const linkedFields = fields.filter((field) => field.ownerTrackableId === trackable.id && field.enabled && !field.deletedAt && (field.ownerTrackableVersion === undefined || field.ownerTrackableVersion === version.version)).sort((a, b) => a.sortOrder - b.sortOrder).flatMap((field): RoutineQuestionField[] => {
+        const fieldTrackable = trackables.find((item) => item.id === field.fieldTrackableId)
+        const fieldVersion = versions.find((item) => item.trackableId === field.fieldTrackableId && item.version === field.fieldTrackableVersion)
+        const fieldCategory = fieldTrackable ? categories.find((item) => item.id === fieldTrackable.categoryId) : undefined
+        return fieldTrackable && fieldVersion && fieldCategory ? [{ field, trackable: fieldTrackable, version: fieldVersion, category: fieldCategory, options: options.filter((item) => item.trackableId === fieldTrackable.id && item.trackableVersion === fieldVersion.version && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder) }] : []
+      })
       return [{
         item: placeholderItem, trackable, version, category,
         options: options.filter((item) => item.trackableId === trackable.id && item.trackableVersion === version.version && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder),
+        fields: linkedFields,
       }]
     })
   }
@@ -234,6 +258,7 @@ export class CheckInEngine {
   }
 
   private async openDailyCheckIn(localDate: string, timezone: IANATimeZone | null): Promise<CheckInSnapshot> {
+    await deduplicateObservationSelections(this.repository, this.timestamp())
     const configuration = await this.getConfiguration()
     if (!configuration.routine) throw new Error('Set up your Nightly Check-In first.')
     const records = await this.repository.getAll('logRecords')
@@ -287,18 +312,36 @@ export class CheckInEngine {
     const recordQuestions = [...questions, ...historicalQuestions]
     const observationIds = new Set(observations.map((item) => item.id))
     const selections = (await this.repository.getAll('observationSelections')).filter((item) => observationIds.has(item.observationId) && !item.deletedAt)
-    const answers = buildRuleAnswers(observations, selections)
-    const [versions, options] = await Promise.all([
-      this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'),
+    const [versions, options, fieldRows, allTrackables, categories] = await Promise.all([
+      this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'), this.repository.getAll('trackableFields'), this.repository.getAll('trackables'), this.repository.getAll('categories'),
     ])
+    const fieldsFor = (ownerTrackableId: string, ownerTrackableVersion: number): readonly RoutineQuestionField[] => fieldRows
+      .filter((field) => field.ownerTrackableId === ownerTrackableId && field.enabled && !field.deletedAt && (field.ownerTrackableVersion === undefined || field.ownerTrackableVersion === ownerTrackableVersion))
+      .sort((a, b) => a.sortOrder - b.sortOrder).flatMap((field): RoutineQuestionField[] => {
+        const fieldTrackable = allTrackables.find((item) => item.id === field.fieldTrackableId)
+        const fieldVersion = versions.find((item) => item.trackableId === field.fieldTrackableId && item.version === field.fieldTrackableVersion)
+        const category = fieldTrackable ? categories.find((item) => item.id === fieldTrackable.categoryId) : undefined
+        return fieldTrackable && fieldVersion && category ? [{ field, trackable: fieldTrackable, version: fieldVersion, category,
+          options: options.filter((item) => item.trackableId === fieldTrackable.id && item.trackableVersion === fieldVersion.version && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder) }] : []
+      })
+    const useLatestDefinition = record.localDate === localDateFor(this.now())
     const historicallyAccurateQuestions = recordQuestions.map((question) => {
       const observation = observations.find((item) => item.trackableId === question.trackable.id)
+      if (useLatestDefinition) {
+        const selectedIds = new Set(selections.filter((item) => item.observationId === observation?.id).map((item) => item.optionId))
+        const offered = new Set(question.options.map((item) => item.optionId))
+        const removedSelections = options.filter((item) => selectedIds.has(item.optionId) && !offered.has(item.optionId))
+          .filter((item, index, all) => all.findIndex((candidate) => candidate.optionId === item.optionId) === index)
+          .map((item) => ({ ...item, label: `${item.label} (Previously selected)`, active: false }))
+        return { ...question, options: [...question.options, ...removedSelections], fields: fieldsFor(question.trackable.id, question.trackable.currentVersion) }
+      }
       if (!observation || observation.trackableVersion === question.version.version) return question
       const version = versions.find((item) => item.trackableId === question.trackable.id && item.version === observation.trackableVersion)
       if (!version) return question
       return {
         ...question,
         version,
+        fields: fieldsFor(question.trackable.id, version.version),
         options: options.filter((item) => item.trackableId === question.trackable.id && item.trackableVersion === version.version && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder),
       }
     })
@@ -314,7 +357,17 @@ export class CheckInEngine {
       const timing = entries.length === 1 && first.startTimePrecision === 'timeOfDay' ? first.startTimeOfDay?.replaceAll('_', ' ') ?? null : null
       return [{ trackable: question.trackable, version: question.version, count: entries.length, timing, recordId: first.id }]
     })
-    return { routine, record, questions: scheduled, visibleQuestions: scheduled.filter((question) => evaluateConditionalRule(question.item.conditionalRule, answers)), observations, selections,
+    const defaultAnswers = Object.fromEntries(scheduled.flatMap((question) => {
+      if (isOccurrenceTrackable(question.trackable) || observations.some((item) => item.trackableId === question.trackable.id)) return []
+      const configured = question.version.configuration.defaultAnswer as unknown as SavedAnswer | undefined
+      if (!configured || configured.answer?.state !== 'answered') return []
+      const selected = [...new Set(configured.selectedOptionIds ?? [])]
+      if (configured.answer.value.kind === 'choice' && (selected.length === 0 || selected.some((id) => !question.options.some((option) => option.optionId === id)))) return []
+      if (configured.answer.value.kind === 'scale' && (configured.answer.value.value < (question.version.scaleMin ?? configured.answer.value.value) || configured.answer.value.value > (question.version.scaleMax ?? configured.answer.value.value))) return []
+      return [[question.trackable.id, { ...configured, selectedOptionIds: selected }]]
+    }))
+    const effectiveAnswers = buildEffectiveRuleAnswers(observations, selections, defaultAnswers)
+    return { routine, record, questions: scheduled, visibleQuestions: scheduled.filter((question) => evaluateConditionalRule(question.item.conditionalRule, effectiveAnswers)), observations, selections, defaultAnswers, effectiveAnswers,
       quickLogSummaries: Object.fromEntries([...grouped].map(([id, entries]) => [id, entries.length])), loggedToday }
   }
 
@@ -323,32 +376,69 @@ export class CheckInEngine {
     if (!record || record.recordKind !== 'routine' || !record.routineId || record.deletedAt) throw new Error('Check-In was not found.')
     const trackable = await this.repository.getById('trackables', trackableId)
     if (!trackable) throw new Error('Trackable was not found.')
-    if (isOccurrenceTrackable(trackable)) return this.saveOccurrenceAnswer(record, trackable, saved, false)
+    let configuration = await this.getConfiguration()
+    const isParentRoutineQuestion = configuration.questions.some((question) => question.trackable.id === trackableId)
+    if (isParentRoutineQuestion && isOccurrenceTrackable(trackable)) return this.saveOccurrenceAnswer(record, trackable, saved, false)
+    if (saved.promoteCustomChoice && saved.customChoiceValue?.trim()) {
+      saved = await this.promoteCustomChoice(trackable, saved)
+      configuration = await this.getConfiguration()
+    }
+    const refreshedTrackable = await this.repository.getById('trackables', trackableId) ?? trackable
     const observations = await this.repository.getAll('observations')
     const existing = observations.find((item) => item.logRecordId === recordId && item.trackableId === trackableId && !item.deletedAt)
     const timestamp = this.timestamp()
+    const customChoiceValue = saved.customChoiceValue?.trim() || undefined
+    if (saved.answer.state === 'answered' && saved.answer.value.kind === 'choice' && saved.customChoiceValue !== undefined && !customChoiceValue) throw new Error('Enter a value for Other.')
     const observation: Observation = existing ? {
-      ...existing, answer: saved.answer, trendValue: saved.trendValue, updatedAt: timestamp, revision: existing.revision + 1,
+      ...existing, trackableVersion: record.localDate === localDateFor(this.now()) ? refreshedTrackable.currentVersion : existing.trackableVersion,
+      answer: saved.answer, customChoiceValue, trendValue: saved.trendValue, updatedAt: timestamp, revision: existing.revision + 1,
     } : {
-      id: this.createId(), logRecordId: recordId, trackableId, trackableVersion: trackable.currentVersion,
-      answer: saved.answer, trendValue: saved.trendValue, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
+      id: this.createId(), logRecordId: recordId, trackableId, trackableVersion: refreshedTrackable.currentVersion,
+      answer: saved.answer, customChoiceValue, trendValue: saved.trendValue, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
     }
     await this.repository.save('observations', observation)
 
     const currentSelections = (await this.repository.getAll('observationSelections')).filter((item) => item.observationId === observation.id && !item.deletedAt)
     const wanted = new Set(saved.answer.state === 'answered' && saved.answer.value.kind === 'choice' ? saved.selectedOptionIds ?? [] : [])
-    await this.repository.saveMany('observationSelections', currentSelections.filter((item) => !wanted.has(item.optionId)).map((item) => ({ ...item, deletedAt: timestamp, updatedAt: timestamp, revision: item.revision + 1 })))
+    const canonical = new Map<string, ObservationOptionSelection>()
+    for (const selection of currentSelections) if (!canonical.has(selection.optionId)) canonical.set(selection.optionId, selection)
+    await this.repository.saveMany('observationSelections', currentSelections.filter((item) => !wanted.has(item.optionId) || canonical.get(item.optionId)?.id !== item.id).map((item) => ({ ...item, deletedAt: timestamp, updatedAt: timestamp, revision: item.revision + 1 })))
     const allSelections = await this.repository.getAll('observationSelections')
     for (const optionId of wanted) {
-      const previous = allSelections.find((item) => item.observationId === observation.id && item.optionId === optionId)
+      const previous = allSelections.find((item) => item.observationId === observation.id && item.optionId === optionId && !item.deletedAt)
+        ?? allSelections.find((item) => item.observationId === observation.id && item.optionId === optionId)
       await this.repository.save('observationSelections', previous
         ? { ...previous, deletedAt: null, updatedAt: timestamp, revision: previous.revision + 1 }
         : { id: this.createId(), observationId: observation.id, optionId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 })
     }
     const updatedRecord = { ...record, updatedAt: timestamp, revision: record.revision + 1 }
     await this.repository.save('logRecords', updatedRecord)
-    const configuration = await this.getConfiguration()
     return this.snapshot(configuration.routine!, updatedRecord, configuration.questions)
+  }
+
+  private async promoteCustomChoice(trackable: Trackable, saved: SavedAnswer): Promise<SavedAnswer> {
+    const label = saved.customChoiceValue!.trim()
+    const normalized = label.replace(/\s+/g, ' ').toLocaleLowerCase()
+    const [versions, allOptions] = await Promise.all([this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions')])
+    const currentVersion = versions.find((item) => item.trackableId === trackable.id && item.version === trackable.currentVersion)
+    if (!currentVersion) throw new Error('Trackable version was not found.')
+    const currentOptions = allOptions.filter((item) => item.trackableId === trackable.id && item.trackableVersion === trackable.currentVersion && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder)
+    const match = currentOptions.find((item) => item.label.trim().replace(/\s+/g, ' ').toLocaleLowerCase() === normalized)
+    if (match) return { ...saved, selectedOptionIds: [...new Set([...(saved.selectedOptionIds ?? []), match.optionId])], customChoiceValue: undefined, promoteCustomChoice: false }
+    const timestamp = this.timestamp()
+    const nextNumber = trackable.currentVersion + 1
+    const optionId = this.createId()
+    const copiedOptions = currentOptions.map((item) => ({ ...item, id: `${item.optionId}:v${nextNumber}`, trackableVersion: nextNumber, createdAt: timestamp, updatedAt: timestamp, revision: 1 }))
+    const promoted: TrackableOption = { id: `${optionId}:v${nextNumber}`, optionId, trackableId: trackable.id, trackableVersion: nextNumber,
+      storedValue: normalized.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), label, sortOrder: copiedOptions.length, active: true,
+      createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+    const nextVersion: TrackableVersion = { ...currentVersion, id: this.createId(), version: nextNumber, retiredAt: null, createdAt: timestamp, updatedAt: timestamp, revision: 1 }
+    await this.repository.saveTransaction([
+      { collection: 'trackables', entities: [{ ...trackable, currentVersion: nextNumber, updatedAt: timestamp, revision: trackable.revision + 1 }] },
+      { collection: 'trackableVersions', entities: [{ ...currentVersion, retiredAt: timestamp, updatedAt: timestamp, revision: currentVersion.revision + 1 }, nextVersion] },
+      { collection: 'trackableOptions', entities: [...copiedOptions, promoted] },
+    ])
+    return { ...saved, selectedOptionIds: [...new Set([...(saved.selectedOptionIds ?? []), optionId])], customChoiceValue: undefined, promoteCustomChoice: false }
   }
 
   async saveOccurrenceAnswer(record: LogRecord, trackable: Trackable, saved: SavedAnswer, removeExisting: boolean): Promise<CheckInSnapshot> {
@@ -401,11 +491,18 @@ export class CheckInEngine {
     if (!routine) throw new Error('Routine was not found.')
     const configuration = await this.getConfiguration()
     let snapshot = await this.snapshot(routine, record, configuration.questions)
-    const answers = buildRuleAnswers(snapshot.observations, snapshot.selections)
+    const answers = snapshot.effectiveAnswers
     const expectedUnanswered = snapshot.visibleQuestions.filter((question) => {
       const answer = answers.get(question.trackable.id)
-      return question.item.completionBehavior === 'expected' && answer?.observation.answer.state !== 'answered'
+      return question.item.completionBehavior === 'expected' && answer?.answer.state !== 'answered'
     })
+    const requiredFields = snapshot.visibleQuestions.flatMap((question) => {
+      const parent = answers.get(question.trackable.id)
+      if (parent?.answer.state !== 'answered') return []
+      return (question.fields ?? []).filter(({ field }) => field.required && evaluateConditionalRule(field.conditionalRule, answers))
+        .filter(({ trackable }) => answers.get(trackable.id)?.answer.state !== 'answered')
+    })
+    if (requiredFields.length) throw new Error(`Answer required field${requiredFields.length === 1 ? '' : 's'}: ${requiredFields.map((field) => field.version.name).join(', ')}.`)
     if (expectedUnanswered.length && !confirmExpected) return { completed: false, expectedUnanswered, snapshot }
     if (record.status !== 'completed') {
       const timestamp = this.timestamp()
@@ -426,8 +523,20 @@ export class CheckInEngine {
         id: this.createId(), date: record.localDate, trackableId: question.trackable.id, status: 'did_not_occur', sourceRoutineId: record.routineId,
         recordedAt: timestamp, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
       }))
+      const defaultObservations: Observation[] = []
+      const defaultSelections: ObservationOptionSelection[] = []
+      for (const [trackableId, saved] of Object.entries(snapshot.defaultAnswers)) {
+        const question = snapshot.visibleQuestions.find((item) => item.trackable.id === trackableId)
+        if (!question) continue
+        const observation: Observation = { id: this.createId(), logRecordId: record.id, trackableId, trackableVersion: question.version.version,
+          answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+        defaultObservations.push(observation)
+        for (const optionId of new Set(saved.selectedOptionIds ?? [])) defaultSelections.push({ id: this.createId(), observationId: observation.id, optionId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 })
+      }
       await this.repository.saveTransaction([
         { collection: 'trackableDailyAssertions', entities: defaultNoAssertions },
+        { collection: 'observations', entities: defaultObservations },
+        { collection: 'observationSelections', entities: defaultSelections },
         { collection: 'logRecords', entities: [completedRecord] },
       ])
       snapshot = await this.snapshot(routine, completedRecord, configuration.questions)

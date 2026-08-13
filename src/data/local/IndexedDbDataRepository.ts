@@ -8,7 +8,7 @@ import {
 import { bucketForHour } from '../../domain/events/eventTiming.ts'
 
 export const TRACE_DATABASE_NAME = 'trace-local-data'
-export const TRACE_DATABASE_VERSION = 3
+export const TRACE_DATABASE_VERSION = 4
 
 type Migration = (database: IDBDatabase, transaction: IDBTransaction) => void
 
@@ -70,6 +70,22 @@ const migrations: Readonly<Record<number, Migration>> = {
     for (const collection of repositoryCollections) {
       if (!database.objectStoreNames.contains(collection)) database.createObjectStore(collection, { keyPath: 'id' })
     }
+  },
+  4: (_database, transaction) => {
+    const store = transaction.objectStore('observationSelections')
+    const seen = new Set<string>()
+    const request = store.openCursor()
+    request.addEventListener('success', () => {
+      const cursor = request.result
+      if (!cursor) return
+      const value = cursor.value as RepositoryCollectionMap['observationSelections']
+      if (!value.deletedAt) {
+        const key = `${value.observationId}\u0000${value.optionId}`
+        if (seen.has(key)) cursor.update({ ...value, deletedAt: value.updatedAt, revision: value.revision + 1 })
+        else seen.add(key)
+      }
+      cursor.continue()
+    })
   },
 }
 
@@ -136,6 +152,15 @@ export class IndexedDbDataRepository implements DataRepository {
     const database = await this.open()
     const transaction = database.transaction(collection, 'readwrite')
     const store = transaction.objectStore(collection)
+    if (collection === 'observationSelections') {
+      const rows = await requestResult(store.getAll()) as RepositoryCollectionMap['observationSelections'][]
+      for (const entity of entities as readonly RepositoryCollectionMap['observationSelections'][]) {
+        if (entity.deletedAt) continue
+        for (const row of rows) if (row.id !== entity.id && !row.deletedAt && row.observationId === entity.observationId && row.optionId === entity.optionId) {
+          store.put({ ...row, deletedAt: entity.updatedAt, updatedAt: entity.updatedAt, revision: row.revision + 1 })
+        }
+      }
+    }
     for (const entity of entities) store.put(entity)
     await transactionDone(transaction)
     this.announceChange(collection)

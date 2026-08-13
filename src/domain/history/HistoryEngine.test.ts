@@ -4,7 +4,7 @@ import type { HistoryData, HistorySearchResult } from './HistoryEngine.ts'
 import {
   HistoryEngine, buildCalendarSummaries, buildDayDetail, buildWeekAgenda, calendarDates, compareHistoryEvents,
   calendarMetricOptions, eventCoveredDates, eventMetricChoices, formatCheckInAgendaSummary, groupHistoryResults, historySearchSuggestions,
-  metricChoices, observedRangeLevel, parseHistoryQuery, projectCalendarMetric, projectEventCalendar, projectMetricCalendar, searchHistory,
+  metricChoices, observedRangeLevel, parseHistoryQuery, projectCalendarMetric, projectEventCalendar, projectMetricCalendar, searchHistory, formatHistoryAnswer,
   shiftLocalDate, shiftMonth, sliceHistoryGroup, weekDates,
 } from './HistoryEngine.ts'
 import type { LogRecord, Observation } from '../models/index.ts'
@@ -60,6 +60,16 @@ function fixture(): HistoryData {
 }
 
 describe('History calendar and detail', () => {
+  it('resolves each stable selected option only from the observation-pinned version', () => {
+    const base = fixture()
+    const observation: Observation = { id: 'choice-observation', logRecordId: 'routine-1', trackableId: 'choice', trackableVersion: 1, answer: { state: 'answered', value: { kind: 'choice', value: null } }, ...sync }
+    const data: HistoryData = { ...base, observations: [...base.observations, observation], observationSelections: [{ id: 'selection', observationId: observation.id, optionId: 'stable-option', ...sync }],
+      trackableOptions: [
+        { id: 'stable-option:v1', optionId: 'stable-option', trackableId: 'choice', trackableVersion: 1, storedValue: 'cheeks', label: 'Cheeks', sortOrder: 0, active: true, ...sync },
+        { id: 'stable-option:v2', optionId: 'stable-option', trackableId: 'choice', trackableVersion: 2, storedValue: 'cheeks', label: 'Cheeks', sortOrder: 0, active: true, ...sync },
+      ] }
+    expect(formatHistoryAnswer(data, observation)).toBe('Cheeks')
+  })
   it('groups completion state and multiple same-day events by local date', () => {
     const base = fixture()
     const data = { ...base, logRecords: [...base.logRecords, record('routine-draft', '2026-08-09', 'routine', { routineId: 'nightly', status: 'draft' })] }

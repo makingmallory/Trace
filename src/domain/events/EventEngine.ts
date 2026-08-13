@@ -59,6 +59,7 @@ export interface EventAnswerDraft {
   trackableId: string
   answer: ObservationAnswer
   selectedOptionIds?: readonly string[]
+  customChoiceValue?: string
 }
 
 export interface LogEventDraft {
@@ -130,6 +131,18 @@ function validateEventAnswers(details: EventDefinitionDetails, answers: readonly
   if (answers.some((item) => !fieldIds.has(item.trackableId))) throw new EventValidationError(['An answer does not belong to this event type.'])
 }
 
+function fieldIsRelevant(details: EventDefinitionDetails, question: EventQuestion, answers: readonly EventAnswerDraft[]): boolean {
+  const rule = question.field.conditionalRule
+  if (!rule) return true
+  if (rule.sourceTrackableId === details.definition.id && rule.operator === 'equals') return rule.expectedValue === true
+  const source = answers.find((item) => item.trackableId === rule.sourceTrackableId)
+  if (source?.answer.state !== 'answered') return false
+  const value = source.answer.value
+  if (rule.operator === 'equals') return value.kind !== 'choice' && value.value === rule.expectedValue
+  if (rule.operator === 'notEquals') return value.kind !== 'choice' && value.value !== rule.expectedValue
+  return true
+}
+
 export class EventEngine {
   private initialization: Promise<void> | null = null
   private readonly repository: DataRepository
@@ -190,7 +203,7 @@ export class EventEngine {
       const definition: EventDefinition = { ...owner, name: ownerVersion.name, description: ownerVersion.description,
         timingMode: owner.quickLogTimingMode ?? 'either', nightlyReminderDefault: 'never', treatmentFollowUpEnabled: false }
       return [{ definition,
-      fields: fields.filter((field) => field.ownerTrackableId === owner.id && field.enabled && !field.deletedAt)
+      fields: fields.filter((field) => field.ownerTrackableId === owner.id && field.enabled && !field.deletedAt && (field.ownerTrackableVersion === undefined || field.ownerTrackableVersion === owner.currentVersion))
         .sort((a, b) => a.sortOrder - b.sortOrder).flatMap((field) => {
           const trackable = trackables.find((item) => item.id === field.fieldTrackableId)
           const version = versions.find((item) => item.trackableId === field.fieldTrackableId && item.version === field.fieldTrackableVersion)
@@ -262,8 +275,9 @@ export class EventEngine {
   }
 
   private async saveFields(ownerTrackableId: string, trackableIds: readonly string[], timestamp: string): Promise<void> {
-    const current = (await this.repository.getAll('trackableFields')).filter((item) => item.ownerTrackableId === ownerTrackableId && !item.deletedAt)
     const trackables = await this.repository.getAll('trackables')
+    const owner = trackables.find((item) => item.id === ownerTrackableId)
+    const current = (await this.repository.getAll('trackableFields')).filter((item) => item.ownerTrackableId === ownerTrackableId && !item.deletedAt && (item.ownerTrackableVersion === undefined || item.ownerTrackableVersion === owner?.currentVersion))
     const wanted = new Set(trackableIds)
     await this.repository.saveMany('trackableFields', current.filter((item) => !wanted.has(item.fieldTrackableId)).map((item) => ({
       ...item, enabled: false, updatedAt: timestamp, revision: item.revision + 1,
@@ -272,7 +286,7 @@ export class EventEngine {
       const trackable = trackables.find((item) => item.id === trackableId)!
       const existing = current.find((item) => item.fieldTrackableId === trackableId)
       await this.repository.save('trackableFields', existing ? { ...existing, enabled: true, sortOrder, fieldTrackableVersion: trackable.currentVersion, updatedAt: timestamp, revision: existing.revision + 1 } : {
-        id: this.createId(), ownerTrackableId, fieldTrackableId: trackableId, fieldTrackableVersion: trackable.currentVersion, sortOrder, enabled: true,
+        id: this.createId(), ownerTrackableId, ownerTrackableVersion: owner?.currentVersion, fieldTrackableId: trackableId, fieldTrackableVersion: trackable.currentVersion, sortOrder, enabled: true,
         completionBehavior: 'optional', createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
       })
     }
@@ -289,6 +303,8 @@ export class EventEngine {
     const details = await this.getDetails(draft.eventDefinitionId)
     if (!details.definition.active) throw new EventValidationError(['Archived Trackables cannot be logged.'])
     validateEventAnswers(details, draft.answers)
+    const missingRequired = details.fields.filter((field) => field.field.required && fieldIsRelevant(details, field, draft.answers)).filter(({ trackable }) => draft.answers.find((item) => item.trackableId === trackable.id)?.answer.state !== 'answered')
+    if (missingRequired.length) throw new EventValidationError([`Answer required field${missingRequired.length === 1 ? '' : 's'}: ${missingRequired.map((item) => item.version.name).join(', ')}.`])
     const timingFields = prepareEventTiming(details, draft.timing)
     const timestamp = this.timestamp()
     const owner = await this.repository.getById('trackables', details.definition.id)
@@ -301,11 +317,11 @@ export class EventEngine {
     for (const field of details.fields) {
       const saved = draft.answers.find((item) => item.trackableId === field.trackable.id) ?? { trackableId: field.trackable.id, answer: { state: 'unanswered' as const } }
       const observation: Observation = { id: this.createId(), logRecordId: record.id, trackableId: field.trackable.id,
-        trackableVersion: field.field.fieldTrackableVersion, answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+        trackableVersion: field.field.fieldTrackableVersion, answer: saved.answer, customChoiceValue: saved.customChoiceValue?.trim() || undefined, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
       observations.push(observation)
       if (saved.answer.state === 'answered' && saved.answer.value.kind === 'choice') {
         const validOptions = new Set(field.options.map((item) => item.optionId))
-        for (const optionId of saved.selectedOptionIds ?? []) {
+        for (const optionId of new Set(saved.selectedOptionIds ?? [])) {
           if (!validOptions.has(optionId)) throw new EventValidationError(['A selected option does not belong to its Trackable version.'])
           selections.push({ id: this.createId(), observationId: observation.id, optionId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 })
         }
@@ -332,6 +348,8 @@ export class EventEngine {
     const existing = await this.getLoggedEvent(recordId)
     if ((existing.record.trackableId ?? existing.record.eventDefinitionId) !== draft.eventDefinitionId) throw new EventValidationError(['A Quick Log entry cannot change its Trackable.'])
     validateEventAnswers(existing.details, draft.answers)
+    const missingRequired = existing.details.fields.filter((field) => field.field.required && fieldIsRelevant(existing.details, field, draft.answers)).filter(({ trackable }) => draft.answers.find((item) => item.trackableId === trackable.id)?.answer.state !== 'answered')
+    if (missingRequired.length) throw new EventValidationError([`Answer required field${missingRequired.length === 1 ? '' : 's'}: ${missingRequired.map((item) => item.version.name).join(', ')}.`])
     const timingFields = prepareEventTiming(existing.details, draft.timing)
     const timestamp = this.timestamp()
     const record: LogRecord = { ...existing.record, ...timingFields, source: draft.source ?? existing.record.source, updatedAt: timestamp, revision: existing.record.revision + 1 }
@@ -344,15 +362,17 @@ export class EventEngine {
       const saved = draft.answers.find((item) => item.trackableId === field.trackable.id) ?? { trackableId: field.trackable.id, answer: { state: 'unanswered' as const } }
       const previous = existing.observations.find((item) => item.trackableId === field.trackable.id)
       const observation: Observation = previous
-        ? { ...previous, answer: saved.answer, deletedAt: null, updatedAt: timestamp, revision: previous.revision + 1 }
-        : { id: this.createId(), logRecordId: record.id, trackableId: field.trackable.id, trackableVersion: field.field.fieldTrackableVersion, answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+        ? { ...previous, answer: saved.answer, customChoiceValue: saved.customChoiceValue?.trim() || undefined, deletedAt: null, updatedAt: timestamp, revision: previous.revision + 1 }
+        : { id: this.createId(), logRecordId: record.id, trackableId: field.trackable.id, trackableVersion: field.field.fieldTrackableVersion, answer: saved.answer, customChoiceValue: saved.customChoiceValue?.trim() || undefined, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
       observations.push(observation)
       await this.repository.save('observations', observation)
       const wanted = new Set(saved.answer.state === 'answered' && saved.answer.value.kind === 'choice' ? saved.selectedOptionIds ?? [] : [])
       const previousSelections = allSelections.filter((item) => item.observationId === observation.id)
-      await this.repository.saveMany('observationSelections', previousSelections.filter((item) => !item.deletedAt && !wanted.has(item.optionId)).map((item) => ({ ...item, deletedAt: timestamp, updatedAt: timestamp, revision: item.revision + 1 })))
+      const canonical = new Map<string, ObservationOptionSelection>()
+      for (const selection of previousSelections.filter((item) => !item.deletedAt)) if (!canonical.has(selection.optionId)) canonical.set(selection.optionId, selection)
+      await this.repository.saveMany('observationSelections', previousSelections.filter((item) => !item.deletedAt && (!wanted.has(item.optionId) || canonical.get(item.optionId)?.id !== item.id)).map((item) => ({ ...item, deletedAt: timestamp, updatedAt: timestamp, revision: item.revision + 1 })))
       for (const optionId of wanted) {
-        const prior = previousSelections.find((item) => item.optionId === optionId)
+        const prior = previousSelections.find((item) => item.optionId === optionId && !item.deletedAt) ?? previousSelections.find((item) => item.optionId === optionId)
         const selection = prior ? { ...prior, deletedAt: null, updatedAt: timestamp, revision: prior.revision + 1 } : { id: this.createId(), observationId: observation.id, optionId, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
         selections.push(selection)
         await this.repository.save('observationSelections', selection)

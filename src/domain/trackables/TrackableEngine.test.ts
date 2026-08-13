@@ -49,6 +49,26 @@ describe('TrackableEngine', () => {
     expect(new Set((await repository.getAll('trackableOptions')).map((option) => option.id)).size).toBe(4)
   })
 
+  it('stores type-appropriate structured defaults and rejects incompatible values', async () => {
+    const cases: readonly TrackableDraft[] = [
+      { ...customDraft, inputType: 'boolean', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, defaultAnswer: { answer: { state: 'answered', value: { kind: 'boolean', value: false } } } },
+      { ...customDraft, defaultAnswer: { answer: { state: 'answered', value: { kind: 'scale', value: 4 } } } },
+      { ...customDraft, inputType: 'number', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, unit: 'mg', configuration: { min: 0, max: 100 }, defaultAnswer: { answer: { state: 'answered', value: { kind: 'number', value: 30, unit: 'mg' } } } },
+      { ...customDraft, inputType: 'duration', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, defaultAnswer: { answer: { state: 'answered', value: { kind: 'duration', value: 45, unit: 'minutes' } } } },
+      { ...customDraft, inputType: 'time', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, defaultAnswer: { answer: { state: 'answered', value: { kind: 'time', value: '08:30' } } } },
+      { ...customDraft, inputType: 'text', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, defaultAnswer: { answer: { state: 'answered', value: { kind: 'text', value: 'Prepared' } } } },
+      { ...customDraft, inputType: 'single_choice', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, options: [{ optionId: 'low', label: 'Low' }, { optionId: 'high', label: 'High' }], defaultAnswer: { answer: { state: 'answered', value: { kind: 'choice', value: null } }, selectedOptionIds: ['low'] } },
+      { ...customDraft, inputType: 'multi_select', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, options: [{ optionId: 'left', label: 'Left' }, { optionId: 'right', label: 'Right' }], defaultAnswer: { answer: { state: 'answered', value: { kind: 'choice', value: null } }, selectedOptionIds: ['left', 'right'] } },
+    ]
+    for (const [index, draft] of cases.entries()) {
+      const { engine } = setup()
+      const created = await engine.createTrackable({ ...draft, name: `Default ${index}` })
+      expect(created.version.configuration.defaultAnswer).toEqual(draft.defaultAnswer)
+    }
+    const { engine } = setup()
+    await expect(engine.createTrackable({ ...customDraft, inputType: 'number', scaleMin: undefined, scaleMax: undefined, scaleStep: undefined, configuration: { min: 0, max: 10 }, defaultAnswer: { answer: { state: 'answered', value: { kind: 'number', value: 11 } } } })).rejects.toThrow('valid number range')
+  })
+
   it('creates versions only for semantic edits and retires the prior version', async () => {
     const { engine, repository } = setup()
     const created = await engine.createTrackable(customDraft)

@@ -136,12 +136,15 @@ export interface EventField extends SyncableEntity {
 
 export interface TrackableField extends SyncableEntity {
   ownerTrackableId: EntityId
+  /** Pins the field layout to the owner's semantic version. Missing only on legacy schema-v2 rows. */
+  ownerTrackableVersion?: number
   fieldTrackableId: EntityId
   fieldTrackableVersion: number
   sortOrder: number
   enabled: boolean
   conditionalRule?: ConditionalRule
   completionBehavior: CompletionBehavior
+  required?: boolean
 }
 
 export interface LogRecord extends SyncableEntity {
@@ -171,6 +174,8 @@ export interface Observation extends SyncableEntity {
   trackableId: EntityId
   trackableVersion: number
   answer: ObservationAnswer
+  /** Free-text choice value selected through Allow Other; never masquerades as an option ID. */
+  customChoiceValue?: string
   trendValue?: string
 }
 

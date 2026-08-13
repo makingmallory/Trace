@@ -8,7 +8,7 @@ const COMMON_HEADERS = ['id', 'revision', 'remoteRevision', 'createdAt', 'update
 const ENTITY_FIELDS = {
   categories: ['name', 'sortOrder', 'active'],
   trackables: ['categoryId', 'active', 'archivedAt', 'currentVersion', 'tags', 'dataRole', 'icon', 'colorRef', 'behavior', 'quickLogTimingMode', 'recordSemantics', 'quickLogEnabled'],
-  trackableFields: ['ownerTrackableId', 'fieldTrackableId', 'fieldTrackableVersion', 'sortOrder', 'enabled', 'conditionalRule', 'completionBehavior'],
+  trackableFields: ['ownerTrackableId', 'fieldTrackableId', 'fieldTrackableVersion', 'sortOrder', 'enabled', 'conditionalRule', 'completionBehavior', 'ownerTrackableVersion', 'required'],
   trackableDailyAssertions: ['date', 'trackableId', 'status', 'sourceRoutineId', 'recordedAt'],
   trackableVersions: ['trackableId', 'version', 'name', 'description', 'inputType', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'valueDirection', 'configuration', 'retiredAt'],
   trackableOptions: ['optionId', 'trackableId', 'trackableVersion', 'storedValue', 'label', 'icon', 'colorRef', 'sortOrder', 'active'],
@@ -17,7 +17,7 @@ const ENTITY_FIELDS = {
   eventDefinitions: ['name', 'description', 'categoryId', 'icon', 'colorRef', 'timingMode', 'dataRole', 'active', 'nightlyReminderDefault', 'treatmentFollowUpEnabled'],
   eventFields: ['eventDefinitionId', 'trackableId', 'trackableVersion', 'sortOrder', 'enabled', 'conditionalRule', 'completionBehavior'],
   logRecords: ['recordKind', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'localDate', 'startTimePrecision', 'startTime', 'startTimeOfDay', 'endLocalDate', 'endTimePrecision', 'endTime', 'endTimeOfDay', 'ongoing', 'timezone', 'status', 'source', 'trackableId', 'trackableVersion'],
-  observations: ['logRecordId', 'trackableId', 'trackableVersion', 'answer', 'trendValue'],
+  observations: ['logRecordId', 'trackableId', 'trackableVersion', 'answer', 'trendValue', 'customChoiceValue'],
   observationSelections: ['observationId', 'optionId'],
   eventDailyAssertions: ['date', 'eventDefinitionId', 'status', 'sourceRoutineId', 'recordedAt'],
   relationships: ['sourceRecordId', 'targetRecordId', 'relationshipType', 'provenance', 'confirmedByUser', 'metadata'],
@@ -148,7 +148,7 @@ function validateRecord_(record) {
 }
 
 function requiredField_(type, field) {
-  const optional = ['icon', 'colorRef', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'sourceRoutineId', 'trackableId', 'trackableVersion', 'quickLogTimingMode', 'behavior'];
+  const optional = ['icon', 'colorRef', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'customChoiceValue', 'sourceRoutineId', 'trackableId', 'trackableVersion', 'ownerTrackableVersion', 'required', 'quickLogTimingMode', 'behavior'];
   return optional.indexOf(field) < 0;
 }
 

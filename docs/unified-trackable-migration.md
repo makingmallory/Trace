@@ -1,5 +1,18 @@
 # Unified Trackable migration
 
+## Batch 1 compatibility notes
+
+Schema v2 remains the wire/backup schema. The Batch 1 additions are backward-compatible optional payload fields:
+
+- `Observation.customChoiceValue`
+- `TrackableField.ownerTrackableVersion`
+- `TrackableField.required`
+- TrackableVersion configuration keys `allowOther` and `defaultAnswer`
+
+Apps Script appends the new Sheet columns without requiring manual edits. Existing schema-v2 TrackableField rows without `ownerTrackableVersion` remain readable. IndexedDB database version 4 and restore/sync startup repair duplicate active selection rows by `(observationId, optionId)`, retaining the oldest stable row and tombstoning later copies. Re-running repair makes no further changes.
+
+Current-day Check-Ins intentionally resolve the latest TrackableVersion. Older Check-Ins resolve the observation-pinned version. This changes presentation/editing only at the current local-date boundary and does not migrate historical observations.
+
 Trace schema v2 makes Trackable the only active tracking definition. Record semantics and entry surfaces are independent: `recordSemantics` is `daily_value` or `occurrence`; an Occurrence Trackable may separately set `quickLogEnabled`; Nightly participation remains a `RoutineItem` relationship. A Trackable may therefore be Nightly-only, Quick-Log-only, or available through both surfaces. Structured Quick Log questions live in `TrackableFields`; explicit day-level No lives in `TrackableDailyAssertions`; occurrences are `LogRecords` with `recordKind = quick_log` and `trackableId`.
 
 ## Upgrade strategy

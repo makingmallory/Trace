@@ -41,6 +41,7 @@ export class InMemoryDataRepository implements DataRepository {
     collection: K,
     entity: RepositoryCollectionMap[K],
   ): Promise<void> {
+    if (collection === 'observationSelections') this.removeDuplicateSelections(entity as RepositoryCollectionMap['observationSelections'])
     this.stores[collection].set(entity.id, clone(entity))
   }
 
@@ -59,7 +60,10 @@ export class InMemoryDataRepository implements DataRepository {
     try {
       for (const write of writes) {
         const store = this.stores[write.collection] as Map<string, { id: string }>
-        for (const entity of write.entities) store.set(entity.id, clone(entity))
+        for (const entity of write.entities) {
+          if (write.collection === 'observationSelections') this.removeDuplicateSelections(entity as RepositoryCollectionMap['observationSelections'])
+          store.set(entity.id, clone(entity))
+        }
       }
     } catch (error) {
       for (const collection of repositoryCollections) {
@@ -68,6 +72,15 @@ export class InMemoryDataRepository implements DataRepository {
         for (const [id, entity] of snapshots.get(collection)!) store.set(id, entity)
       }
       throw error
+    }
+  }
+
+  private removeDuplicateSelections(selection: RepositoryCollectionMap['observationSelections']): void {
+    if (selection.deletedAt) return
+    for (const [id, candidate] of this.stores.observationSelections) {
+      if (id !== selection.id && !candidate.deletedAt && candidate.observationId === selection.observationId && candidate.optionId === selection.optionId) {
+        this.stores.observationSelections.set(id, clone({ ...candidate, deletedAt: selection.updatedAt, updatedAt: selection.updatedAt, revision: candidate.revision + 1 }))
+      }
     }
   }
 }

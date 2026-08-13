@@ -1,13 +1,14 @@
-import type { ConditionalRule, JsonValue, Observation, ObservationOptionSelection } from '../models/index.ts'
+import type { ConditionalRule, JsonValue, Observation, ObservationAnswer, ObservationOptionSelection } from '../models/index.ts'
 
 export interface RuleAnswer {
-  observation: Observation
+  answer: ObservationAnswer
   selectedOptionIds: readonly string[]
+  source: 'stored' | 'presentation'
 }
 
 function comparableValue(answer: RuleAnswer): JsonValue | readonly string[] | undefined {
-  if (answer.observation.answer.state !== 'answered') return undefined
-  const value = answer.observation.answer.value
+  if (answer.answer.state !== 'answered') return undefined
+  const value = answer.answer.value
   if (value.kind === 'choice') return answer.selectedOptionIds
   return value.value
 }
@@ -55,10 +56,28 @@ export function buildRuleAnswers(
   return new Map(observations.filter((item) => !item.deletedAt).map((observation) => [
     observation.trackableId,
     {
-      observation,
+      answer: observation.answer,
       selectedOptionIds: selections
         .filter((selection) => selection.observationId === observation.id && !selection.deletedAt)
         .map((selection) => selection.optionId),
+      source: 'stored',
     },
   ]))
+}
+
+export function buildEffectiveRuleAnswers(
+  observations: readonly Observation[],
+  selections: readonly ObservationOptionSelection[],
+  presentationAnswers: Readonly<Record<string, { answer: Observation['answer']; selectedOptionIds?: readonly string[] }>>,
+): ReadonlyMap<string, RuleAnswer> {
+  const effective = new Map(buildRuleAnswers(observations, selections))
+  for (const [trackableId, saved] of Object.entries(presentationAnswers)) {
+    if (effective.has(trackableId)) continue
+    effective.set(trackableId, {
+      answer: saved.answer,
+      selectedOptionIds: [...new Set(saved.selectedOptionIds ?? [])],
+      source: 'presentation',
+    })
+  }
+  return effective
 }

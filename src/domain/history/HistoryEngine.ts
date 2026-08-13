@@ -4,6 +4,7 @@ import { formatEventTiming, timeOfDayDefinitions } from '../events/eventTiming.t
 import type {
   Category, EventDefinition, IconReference, LogRecord, Observation, ObservationOptionSelection, Routine, RoutineItem, Settings,
   Trackable, TrackableOption, TrackableVersion,
+  TrackableField,
 } from '../models/index.ts'
 import { isOccurrenceTrackable } from '../trackables/trackableSemantics.ts'
 
@@ -19,6 +20,7 @@ export interface HistoryData {
   trackables: readonly Trackable[]
   trackableOptions: readonly TrackableOption[]
   trackableVersions: readonly TrackableVersion[]
+  trackableFields?: readonly TrackableField[]
 }
 
 export interface CalendarDaySummary {
@@ -222,14 +224,14 @@ export function compareHistoryEvents(left: LogRecord, right: LogRecord): number 
 
 function selectionsFor(data: HistoryData, observation: Observation): readonly TrackableOption[] {
   const ids = new Set(data.observationSelections.filter((item) => item.observationId === observation.id && !item.deletedAt).map((item) => item.optionId))
-  return data.trackableOptions.filter((option) => ids.has(option.optionId) && !option.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder)
+  return data.trackableOptions.filter((option) => option.trackableId === observation.trackableId && option.trackableVersion === observation.trackableVersion && ids.has(option.optionId) && !option.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
 export function formatHistoryAnswer(data: HistoryData, observation: Observation): string {
   if (observation.answer.state !== 'answered') return missingLabels[observation.answer.state]
   const value = observation.answer.value
   if (value.kind === 'boolean') return value.value ? 'Yes' : 'No'
-  if (value.kind === 'choice') return selectionsFor(data, observation).map((item) => item.label).join(', ') || 'No selection'
+  if (value.kind === 'choice') return [...selectionsFor(data, observation).map((item) => item.label), ...(observation.customChoiceValue ? [observation.customChoiceValue] : [])].join(', ') || 'No selection'
   if (value.kind === 'number') return `${value.value}${value.unit ? ` ${value.unit}` : ''}`
   if (value.kind === 'duration') return `${value.value} min`
   return String(value.value)
@@ -301,8 +303,15 @@ export function buildDayDetail(data: HistoryData, localDate: string, today = cur
     const itemOrder = new Map(orderedItems.flatMap((item, index) => item.target.kind === 'trackable' ? [[item.target.trackableId, index] as const] : []))
     const observations = data.observations.filter((item) => item.logRecordId === routineRecord.id && !item.deletedAt).sort((a, b) => (itemOrder.get(a.trackableId) ?? Number.MAX_SAFE_INTEGER) - (itemOrder.get(b.trackableId) ?? Number.MAX_SAFE_INTEGER) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
     for (const observation of observations) {
-      const detail = answerDetail(data, observation)
-      const trackable = data.trackables.find((item) => item.id === observation.trackableId)
+      let detail = answerDetail(data, observation)
+      let trackable = data.trackables.find((item) => item.id === observation.trackableId)
+      const structuredField = (data.trackableFields ?? []).find((field) => field.fieldTrackableId === observation.trackableId && field.enabled && !field.deletedAt && orderedItems.some((item) => item.target.kind === 'trackable' && item.target.trackableId === field.ownerTrackableId))
+      if (detail && structuredField) {
+        const owner = data.trackables.find((item) => item.id === structuredField.ownerTrackableId)
+        const ownerVersion = owner ? data.trackableVersions.find((item) => item.trackableId === owner.id && item.version === (structuredField.ownerTrackableVersion ?? owner.currentVersion)) : undefined
+        if (ownerVersion) detail = { ...detail, name: `${ownerVersion.name} · ${detail.name}` }
+        if (owner) trackable = owner
+      }
       const category = trackable ? data.categories.find((item) => item.id === trackable.categoryId)?.name : undefined
       if (detail) grouped.set(category ?? 'Other', [...(grouped.get(category ?? 'Other') ?? []), detail])
     }
@@ -504,12 +513,12 @@ export class HistoryEngine {
   }
 
   async load(): Promise<HistoryData> {
-    const [categories, eventDefinitions, logRecords, observations, observationSelections, routines, routineItems, settings, trackables, trackableOptions, trackableVersions] = await Promise.all([
+    const [categories, eventDefinitions, logRecords, observations, observationSelections, routines, routineItems, settings, trackables, trackableOptions, trackableVersions, trackableFields] = await Promise.all([
       this.repository.getAll('categories'), this.repository.getAll('eventDefinitions'), this.repository.getAll('logRecords'),
       this.repository.getAll('observations'), this.repository.getAll('observationSelections'), this.repository.getAll('routines'), this.repository.getAll('routineItems'), this.repository.getAll('settings'),
-      this.repository.getAll('trackables'), this.repository.getAll('trackableOptions'), this.repository.getAll('trackableVersions'),
+      this.repository.getAll('trackables'), this.repository.getAll('trackableOptions'), this.repository.getAll('trackableVersions'), this.repository.getAll('trackableFields'),
     ])
-    return { categories, eventDefinitions, logRecords, observations, observationSelections, routines, routineItems, settings, trackables, trackableOptions, trackableVersions }
+    return { categories, eventDefinitions, logRecords, observations, observationSelections, routines, routineItems, settings, trackables, trackableOptions, trackableVersions, trackableFields }
   }
 
   async softDelete(recordId: string): Promise<LogRecord> {

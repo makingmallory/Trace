@@ -66,7 +66,7 @@ export function LogEventScreen() {
         setEnd(endpointInputFromRecord(existing.record, 'end'))
         setEndsSameDay(!existing.record.endLocalDate || existing.record.endLocalDate === existing.record.localDate)
         setOngoing(existing.record.ongoing)
-        setAnswers(new Map(existing.observations.map((observation) => [observation.trackableId, { trackableId: observation.trackableId, answer: observation.answer, selectedOptionIds: existing.selections.filter((item) => item.observationId === observation.id).map((item) => item.optionId) }])))
+        setAnswers(new Map(existing.observations.map((observation) => [observation.trackableId, { trackableId: observation.trackableId, answer: observation.answer, selectedOptionIds: existing.selections.filter((item) => item.observationId === observation.id).map((item) => item.optionId), customChoiceValue: observation.customChoiceValue }])))
         return
       }
       const item = await eventEngine.getDetails(eventDefinitionId)
@@ -77,6 +77,15 @@ export function LogEventScreen() {
   }, [eventDefinitionId, recordId])
   if (!details) return error ? <section className="screen"><p className="form-error">{error}</p><Link to="/quick-log">Back to Quick Log</Link></section> : <Loading />
   function saveAnswer(trackableId: string, answer: EventAnswerDraft) { setAnswers((current) => new Map(current).set(trackableId, answer)) }
+  const visibleFields = details.fields.filter((field) => {
+    const rule = field.field.conditionalRule
+    if (!rule) return true
+    if (rule.sourceTrackableId === details.definition.id && rule.operator === 'equals') return rule.expectedValue === true
+    const source = answers.get(rule.sourceTrackableId)
+    if (source?.answer.state !== 'answered') return false
+    const value = source.answer.value
+    return rule.operator !== 'equals' || (value.kind !== 'choice' && value.value === rule.expectedValue)
+  })
   async function submit(event: FormEvent) {
     if (!details) return
     event.preventDefault(); setBusy(true); setError('')
@@ -95,11 +104,11 @@ export function LogEventScreen() {
           ? <PointTimingInput value={start} onChange={setStart} dayOnly={details.definition.timingMode === 'dayOnly'} />
           : <DurationTimingInput start={start} end={end} endsSameDay={endsSameDay} ongoing={ongoing} onStartChange={(next) => { setStart(next); if (end.localDate < next.localDate) setEnd({ ...end, localDate: next.localDate }) }} onEndChange={setEnd} onEndsSameDayChange={setEndsSameDay} onOngoingChange={setOngoing} />}
       </section>
-      {details.fields.length > 0 && <section className="event-fields"><div className="section-heading"><h2>Details</h2><span>Optional unless you choose to answer</span></div>{details.fields.map((field) => {
-        const saved = answers.get(field.trackable.id); const observation = saved ? localObservation(field.trackable.id, field.field.fieldTrackableVersion, saved.answer) : undefined
+      {details.fields.length > 0 && <section className="event-fields"><div className="section-heading"><h2>Details</h2><span>Optional unless marked required</span></div>{visibleFields.map((field) => {
+        const saved = answers.get(field.trackable.id); const observation = saved ? { ...localObservation(field.trackable.id, field.field.fieldTrackableVersion, saved.answer), customChoiceValue: saved.customChoiceValue } : undefined
         const selections = (saved?.selectedOptionIds ?? []).map((optionId) => localSelection(field.trackable.id, optionId))
         const item: RoutineItem = { ...field.field, routineId: 'event-form', target: { kind: 'trackable', trackableId: field.trackable.id }, section: undefined, frequency: 'every_day', trendTrackingMode: 'none', eventReminderBehavior: 'never' }
-        return <article className="question-card" key={field.field.id}><div className="question-card__heading"><span aria-hidden="true">{iconGlyph(field.trackable.icon)}</span><div><h3 id={`event-field-${field.field.id}`}>{field.version.name}</h3>{field.version.description && <p>{field.version.description}</p>}</div></div><QuestionInput question={{ item, trackable: field.trackable, version: field.version, options: field.options, category: field.category }} observation={observation} selections={selections} onSave={(next) => saveAnswer(field.trackable.id, { trackableId: field.trackable.id, answer: next.answer, selectedOptionIds: next.selectedOptionIds })} /></article>
+        return <article className="question-card" key={field.field.id}><div className="question-card__heading"><span aria-hidden="true">{iconGlyph(field.trackable.icon)}</span><div><h3 id={`event-field-${field.field.id}`}>{field.version.name}{field.field.required ? ' *' : ''}</h3>{field.version.description && <p>{field.version.description}</p>}</div></div><QuestionInput question={{ item, trackable: field.trackable, version: field.version, options: field.options, category: field.category }} observation={observation} selections={selections} onSave={(next) => saveAnswer(field.trackable.id, { trackableId: field.trackable.id, answer: next.answer, selectedOptionIds: next.selectedOptionIds, customChoiceValue: next.customChoiceValue })} /></article>
       })}</section>}
       {details.fields.length === 0 && <p className="precision-note">This Trackable has no extra details, so it is ready to save now.</p>}
       {error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button finish-button" disabled={busy}>{busy ? 'Saving…' : recordId ? 'Save Changes' : `Save ${details.definition.name}`}</button>

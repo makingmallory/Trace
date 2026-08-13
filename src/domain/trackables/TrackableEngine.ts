@@ -10,6 +10,9 @@ import type {
   TrackableVersion,
   ValueDirection,
   TrackableRecordSemantics,
+  ObservationAnswer,
+  ConditionalRule,
+  TrackableField,
 } from '../models/index.ts'
 import type { DataRepository } from '../../data/repository/DataRepository.ts'
 import { isSupportedIcon } from '../../presets/iconLibrary.ts'
@@ -39,12 +42,23 @@ export interface TrackableDraft {
   tags?: readonly string[]
   icon?: IconReference
   configuration?: Readonly<Record<string, JsonValue>>
+  allowOther?: boolean
+  defaultAnswer?: { answer: ObservationAnswer; selectedOptionIds?: readonly string[] }
+  fields?: readonly { trackableId: string; required?: boolean; conditionalRule?: ConditionalRule }[]
+}
+
+export interface TrackableFieldDetails {
+  field: TrackableField
+  trackable: Trackable
+  version: TrackableVersion
+  options: readonly TrackableOption[]
 }
 
 export interface TrackableDetails {
   trackable: Trackable
   version: TrackableVersion
   options: readonly TrackableOption[]
+  fields?: readonly TrackableFieldDetails[]
 }
 
 export interface TrackableLibrary {
@@ -71,6 +85,10 @@ function optionStoredValue(label: string): string {
   return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 }
 
+function baseConfiguration(configuration: Readonly<Record<string, JsonValue>> | undefined): Readonly<Record<string, JsonValue>> {
+  return Object.fromEntries(Object.entries(configuration ?? {}).filter(([key]) => key !== 'allowOther' && key !== 'defaultAnswer'))
+}
+
 function validateDraft(draft: TrackableDraft): void {
   const issues: string[] = []
   if (!draft.name.trim()) issues.push('Name is required.')
@@ -89,6 +107,7 @@ function validateDraft(draft: TrackableDraft): void {
   }
 
   const choiceInput = draft.inputType === 'single_choice' || draft.inputType === 'multi_select'
+  if (draft.allowOther && !choiceInput) issues.push('Allow Other is only available for choice Trackables.')
   if (choiceInput) {
     const labels = (draft.options ?? []).map((option) => option.label.trim())
     if (labels.length < 2 || labels.some((label) => !label)) issues.push('Choice Trackables need at least two named options.')
@@ -101,17 +120,40 @@ function validateDraft(draft: TrackableDraft): void {
 
   if (draft.inputType === 'duration' && draft.unit && draft.unit.trim().toLowerCase() !== 'minutes') issues.push('Duration Trackables are stored in minutes.')
 
+  if (draft.defaultAnswer) {
+    const value = draft.defaultAnswer.answer.state === 'answered' ? draft.defaultAnswer.answer.value : null
+    if (!value) issues.push('A default must be an answered value.')
+    else if (choiceInput) {
+      const validIds = new Set((draft.options ?? []).map((option) => option.optionId).filter(Boolean))
+      const selected = [...new Set(draft.defaultAnswer.selectedOptionIds ?? [])]
+      if (!selected.length || selected.some((id) => !validIds.has(id))) issues.push('Choose a valid default option.')
+      if (draft.inputType === 'single_choice' && selected.length !== 1) issues.push('Single choice defaults use one option.')
+    } else if (value.kind !== draft.inputType) issues.push('The default does not match the answer style.')
+    else if (value.kind === 'scale' && (value.value < (draft.scaleMin ?? value.value) || value.value > (draft.scaleMax ?? value.value) || ((value.value - (draft.scaleMin ?? value.value)) / (draft.scaleStep ?? 1)) % 1 !== 0)) issues.push('The default is outside the valid scale values.')
+    else if (value.kind === 'number') {
+      const min = draft.configuration?.min
+      const max = draft.configuration?.max
+      if (!Number.isFinite(value.value) || (typeof min === 'number' && value.value < min) || (typeof max === 'number' && value.value > max)) issues.push('The default is outside the valid number range.')
+    } else if (value.kind === 'duration' && (!Number.isFinite(value.value) || value.value < 0)) issues.push('The default duration must be zero or more minutes.')
+    else if (value.kind === 'time' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(value.value)) issues.push('The default time is invalid.')
+  }
+
   if (issues.length) throw new TrackableValidationError(issues)
 }
 
 function versionDefinition(draft: TrackableDraft): string {
+  const behaviorConfiguration = {
+    ...baseConfiguration(draft.configuration), allowOther: draft.allowOther ?? false,
+    ...(draft.defaultAnswer ? { defaultAnswer: draft.defaultAnswer as unknown as JsonValue } : {}),
+  }
   return JSON.stringify({
     name: draft.name.trim(), description: draft.description?.trim() || undefined, inputType: draft.inputType,
     recordSemantics: draft.recordSemantics ?? 'daily_value', quickLogTimingMode: draft.quickLogTimingMode,
     unit: draft.unit?.trim() || undefined, valueDirection: draft.valueDirection,
     scaleMin: draft.scaleMin, scaleMax: draft.scaleMax, scaleStep: draft.scaleStep,
-    configuration: draft.configuration ?? {},
+    configuration: behaviorConfiguration,
     options: (draft.options ?? []).map((option) => ({ optionId: option.optionId, label: option.label.trim() })),
+    fields: draft.fields ?? [],
   })
 }
 
@@ -146,16 +188,22 @@ export class TrackableEngine {
 
   async getLibrary(): Promise<TrackableLibrary> {
     await this.initialize()
-    const [categories, trackables, versions, options] = await Promise.all([
+    const [categories, trackables, versions, options, fields] = await Promise.all([
       this.repository.getAll('categories'), this.repository.getAll('trackables'),
-      this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'),
+      this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'), this.repository.getAll('trackableFields'),
     ])
     const details = trackables.map((trackable) => {
       const version = versions.find((item) => item.trackableId === trackable.id && item.version === trackable.currentVersion)
       if (!version) throw new Error(`Trackable ${trackable.id} is missing version ${trackable.currentVersion}.`)
+      const linkedFields = fields.filter((field) => field.ownerTrackableId === trackable.id && field.enabled && !field.deletedAt && (field.ownerTrackableVersion === undefined || field.ownerTrackableVersion === trackable.currentVersion)).sort((a, b) => a.sortOrder - b.sortOrder).flatMap((field): TrackableFieldDetails[] => {
+        const fieldTrackable = trackables.find((item) => item.id === field.fieldTrackableId)
+        const fieldVersion = versions.find((item) => item.trackableId === field.fieldTrackableId && item.version === field.fieldTrackableVersion)
+        return fieldTrackable && fieldVersion ? [{ field, trackable: fieldTrackable, version: fieldVersion, options: options.filter((item) => item.trackableId === fieldTrackable.id && item.trackableVersion === fieldVersion.version && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder) }] : []
+      })
       return {
         trackable, version,
         options: options.filter((item) => item.trackableId === trackable.id && item.trackableVersion === trackable.currentVersion).sort((a, b) => a.sortOrder - b.sortOrder),
+        fields: linkedFields,
       }
     })
     return {
@@ -255,7 +303,8 @@ export class TrackableEngine {
     await this.repository.save('trackables', trackable)
     await this.repository.save('trackableVersions', version)
     await this.repository.saveMany('trackableOptions', options)
-    return { trackable, version, options }
+    const fields = await this.saveFields(trackableId, 1, draft.fields ?? [], timestamp)
+    return { trackable, version, options, fields }
   }
 
   async updateTrackable(id: string, draft: TrackableDraft): Promise<TrackableDetails> {
@@ -268,7 +317,10 @@ export class TrackableEngine {
       dataRole: current.trackable.dataRole, valueDirection: current.version.valueDirection,
       unit: current.version.unit, scaleMin: current.version.scaleMin, scaleMax: current.version.scaleMax, scaleStep: current.version.scaleStep,
       options: current.options.filter((option) => option.active).map((option) => ({ optionId: option.optionId, label: option.label, icon: option.icon })),
-      tags: current.trackable.tags, icon: current.trackable.icon, configuration: current.version.configuration,
+      tags: current.trackable.tags, icon: current.trackable.icon, configuration: baseConfiguration(current.version.configuration),
+      allowOther: current.version.configuration.allowOther === true,
+      defaultAnswer: current.version.configuration.defaultAnswer as unknown as TrackableDraft['defaultAnswer'],
+      fields: (current.fields ?? []).map(({ field }) => ({ trackableId: field.fieldTrackableId, required: field.required, conditionalRule: field.conditionalRule })),
     }
     const semanticChange = versionDefinition(currentDraft) !== versionDefinition(draft)
     const timestamp = this.timestamp()
@@ -289,7 +341,8 @@ export class TrackableEngine {
     await this.repository.saveMany('trackableOptions', options)
     await this.repository.save('trackableVersions', { ...current.version, retiredAt: timestamp, updatedAt: timestamp, revision: current.version.revision + 1 })
     await this.repository.save('trackables', trackable)
-    return { trackable, version, options }
+    const fields = await this.saveFields(id, trackable.currentVersion, draft.fields ?? [], timestamp)
+    return { trackable, version, options, fields }
   }
 
   async setTrackableActive(id: string, active: boolean): Promise<void> {
@@ -304,15 +357,45 @@ export class TrackableEngine {
     const versions = await this.repository.getAll('trackableVersions')
     const version = versions.find((item) => item.trackableId === id && item.version === trackable.currentVersion)
     if (!version) throw new Error(`Trackable ${id} is missing its current version.`)
-    const options = (await this.repository.getAll('trackableOptions')).filter((item) => item.trackableId === id && item.trackableVersion === trackable.currentVersion).sort((a, b) => a.sortOrder - b.sortOrder)
-    return { trackable, version, options }
+    const [allOptions, allFields, allTrackables] = await Promise.all([this.repository.getAll('trackableOptions'), this.repository.getAll('trackableFields'), this.repository.getAll('trackables')])
+    const options = allOptions.filter((item) => item.trackableId === id && item.trackableVersion === trackable.currentVersion).sort((a, b) => a.sortOrder - b.sortOrder)
+    const fields = allFields.filter((item) => item.ownerTrackableId === id && item.enabled && !item.deletedAt && (item.ownerTrackableVersion === undefined || item.ownerTrackableVersion === trackable.currentVersion)).sort((a, b) => a.sortOrder - b.sortOrder).flatMap((field): TrackableFieldDetails[] => {
+      const fieldTrackable = allTrackables.find((item) => item.id === field.fieldTrackableId)
+      const fieldVersion = versions.find((item) => item.trackableId === field.fieldTrackableId && item.version === field.fieldTrackableVersion)
+      return fieldTrackable && fieldVersion ? [{ field, trackable: fieldTrackable, version: fieldVersion, options: allOptions.filter((item) => item.trackableId === fieldTrackable.id && item.trackableVersion === fieldVersion.version && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder) }] : []
+    })
+    return { trackable, version, options, fields }
+  }
+
+  private async saveFields(ownerTrackableId: string, ownerTrackableVersion: number, drafts: NonNullable<TrackableDraft['fields']>, timestamp: string): Promise<readonly TrackableFieldDetails[]> {
+    const [trackables, versions, options] = await Promise.all([this.repository.getAll('trackables'), this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions')])
+    const rows: TrackableField[] = drafts.map((draft, sortOrder) => {
+      if (draft.trackableId === ownerTrackableId) throw new TrackableValidationError(['A Trackable cannot contain itself as a field.'])
+      const fieldTrackable = trackables.find((item) => item.id === draft.trackableId && item.active && !item.deletedAt)
+      if (!fieldTrackable) throw new TrackableValidationError(['Additional fields must use active Trackables.'])
+      return { id: this.createId(), ownerTrackableId, ownerTrackableVersion, fieldTrackableId: fieldTrackable.id, fieldTrackableVersion: fieldTrackable.currentVersion,
+        sortOrder, enabled: true, completionBehavior: draft.required ? 'expected' : 'optional', required: Boolean(draft.required),
+        conditionalRule: draft.conditionalRule?.sourceTrackableId === '__parent__' ? { ...draft.conditionalRule, sourceTrackableId: ownerTrackableId } : draft.conditionalRule,
+        createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+    })
+    await this.repository.saveMany('trackableFields', rows)
+    return rows.flatMap((field): TrackableFieldDetails[] => {
+      const fieldTrackable = trackables.find((item) => item.id === field.fieldTrackableId)
+      const fieldVersion = versions.find((item) => item.trackableId === field.fieldTrackableId && item.version === field.fieldTrackableVersion)
+      return fieldTrackable && fieldVersion ? [{ field, trackable: fieldTrackable, version: fieldVersion, options: options.filter((item) => item.trackableId === fieldTrackable.id && item.trackableVersion === fieldVersion.version && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder) }] : []
+    })
   }
 
   private makeVersion(trackableId: string, versionNumber: number, draft: TrackableDraft, timestamp: string): TrackableVersion {
+    const configuration = {
+      ...baseConfiguration(draft.configuration), allowOther: draft.allowOther ?? false,
+      ...(draft.defaultAnswer ? { defaultAnswer: draft.defaultAnswer as unknown as JsonValue } : {}),
+    }
     return { id: this.createId(), trackableId, version: versionNumber, name: draft.name.trim(), description: draft.description?.trim() || undefined,
       inputType: draft.inputType, scaleMin: draft.inputType === 'scale' ? draft.scaleMin : undefined,
       scaleMax: draft.inputType === 'scale' ? draft.scaleMax : undefined, scaleStep: draft.inputType === 'scale' ? draft.scaleStep : undefined,
-      unit: draft.inputType === 'duration' ? 'minutes' : draft.unit?.trim() || undefined, valueDirection: draft.valueDirection, configuration: draft.configuration ?? {}, retiredAt: null,
+      unit: draft.inputType === 'duration' ? 'minutes' : draft.unit?.trim() || undefined, valueDirection: draft.valueDirection,
+      configuration, retiredAt: null,
       createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
   }
 

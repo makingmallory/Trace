@@ -26,4 +26,17 @@ describe('Trace JSON backup export', () => {
     expect(await repository.getById('logRecords', 'entry')).toMatchObject({ recordKind: 'quick_log', trackableId: 'pilates', startTime: null })
     expect(await repository.getAll('logRecords')).toHaveLength(1)
   })
+
+  it('round-trips custom choice values, defaults, and version-pinned structured fields', async () => {
+    const source = new InMemoryDataRepository()
+    const base = { createdAt: '2026-08-10T00:00:00.000Z', updatedAt: '2026-08-10T00:00:00.000Z', deletedAt: null, revision: 1 }
+    await source.save('trackableVersions', { ...base, id: 'owner-v1', trackableId: 'owner', version: 1, name: 'Owner', inputType: 'single_choice', valueDirection: 'neutral', configuration: { allowOther: true, defaultAnswer: { answer: { state: 'answered', value: { kind: 'choice', value: null } }, selectedOptionIds: ['option'] } }, retiredAt: null })
+    await source.save('trackableFields', { ...base, id: 'field', ownerTrackableId: 'owner', ownerTrackableVersion: 1, fieldTrackableId: 'dose', fieldTrackableVersion: 2, sortOrder: 0, enabled: true, completionBehavior: 'expected', required: true })
+    await source.save('observations', { ...base, id: 'observation', logRecordId: 'record', trackableId: 'owner', trackableVersion: 1, answer: { state: 'answered', value: { kind: 'choice', value: null } }, customChoiceValue: 'Custom value' })
+    const target = new InMemoryDataRepository()
+    await restoreTraceBackup(target, await createTraceBackup(source))
+    expect(await target.getById('trackableVersions', 'owner-v1')).toMatchObject({ configuration: { allowOther: true } })
+    expect(await target.getById('trackableFields', 'field')).toMatchObject({ ownerTrackableVersion: 1, fieldTrackableId: 'dose', required: true })
+    expect(await target.getById('observations', 'observation')).toMatchObject({ customChoiceValue: 'Custom value' })
+  })
 })

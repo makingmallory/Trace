@@ -21,6 +21,15 @@ This amendment supersedes every later section that describes Trackables and Even
 
 Implementation details and upgrade limitations are documented in `docs/unified-trackable-migration.md`.
 
+## Batch 1 Trackable behavior amendment
+
+- A routine Check-In whose `localDate` is the Trackable-relevant current local date is editable against the latest TrackableVersion. Existing stable selections remain selected when valid; a removed selected value is shown as “Previously selected” until the user removes or replaces it. Completed older local dates continue resolving the version pinned by their observations.
+- Within one observation, an option's stable identity may occur at most once. Save, edit, restore, sync, and IndexedDB upgrade paths repair duplicate `ObservationSelections` by retaining one canonical observation + option row; the repair is idempotent.
+- Choice Trackables may enable `Allow Other`. Observation-level custom text is stored separately from stable option selections. “Add this to my options” trims and normalizes case/whitespace, reuses an exact normalized match, or creates one stable option in a new TrackableVersion. Historical custom text is not silently rewritten.
+- A version may define an optional compatible default answer. Defaults are presentation-only until successful form completion, never overwrite stored or derived occurrence state, and never create Quick Log occurrences. Invalid option/range defaults are rejected during editing or ignored safely while loading external data.
+- `TrackableField` is the shared structured-field link for both Nightly and Quick Log. It pins stable owner and field version identities, supports ordering, required state, and declarative conditional rules. All field observations share the parent's LogRecord rather than becoming unrelated records. Old schema-v2 field rows without an owner version remain readable as compatibility rows.
+- Structured field values remain normalized observations/selections and therefore queryable for future Trends. New structured-field analytics UI remains deferred.
+
 **Version:** 0.1  
 **Status:** Pre-development source of truth  
 **Date:** August 10, 2026  

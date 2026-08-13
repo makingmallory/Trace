@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ConditionalRule, Observation, ObservationOptionSelection, ObservationValue } from '../models/index.ts'
-import { buildRuleAnswers, evaluateConditionalRule } from './conditionalRules.ts'
+import { buildEffectiveRuleAnswers, buildRuleAnswers, evaluateConditionalRule } from './conditionalRules.ts'
 
 function observation(value: ObservationValue): Observation {
   return { id: 'observation', logRecordId: 'record', trackableId: 'source', trackableVersion: 1, answer: { state: 'answered', value }, createdAt: '2026-08-10T12:00:00.000Z', updatedAt: '2026-08-10T12:00:00.000Z', deletedAt: null, revision: 1 }
@@ -39,5 +39,15 @@ describe('conditional rules', () => {
     const answers = buildRuleAnswers([missing], [])
     expect(evaluateConditionalRule({ sourceTrackableId: 'source', operator: 'isAnswered' }, answers)).toBe(false)
     expect(evaluateConditionalRule({ sourceTrackableId: 'source', operator: 'notEquals', expectedValue: true }, answers)).toBe(false)
+  })
+
+  it('prefers persisted answers over presentation defaults in one effective-answer map', () => {
+    const defaults = { source: { answer: { state: 'answered' as const, value: { kind: 'boolean' as const, value: true } } } }
+    const defaultOnly = buildEffectiveRuleAnswers([], [], defaults)
+    expect(evaluateConditionalRule({ sourceTrackableId: 'source', operator: 'equals', expectedValue: true }, defaultOnly)).toBe(true)
+
+    const persisted = observation({ kind: 'boolean', value: false })
+    const overridden = buildEffectiveRuleAnswers([persisted], [], defaults)
+    expect(evaluateConditionalRule({ sourceTrackableId: 'source', operator: 'equals', expectedValue: true }, overridden)).toBe(false)
   })
 })

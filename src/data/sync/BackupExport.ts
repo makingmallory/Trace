@@ -2,6 +2,7 @@ import type { DataRepository } from '../repository/DataRepository.ts'
 import { serializeEntity, syncedCollections, TRACE_SCHEMA_VERSION } from './SyncProtocol.ts'
 import { deserializeEntity, parseSyncRecord } from './SyncProtocol.ts'
 import { migrateLegacyEvents } from '../migrations/unifyTrackables.ts'
+import { deduplicateObservationSelections } from '../migrations/deduplicateObservationSelections.ts'
 import type { RepositoryWrite } from '../repository/DataRepository.ts'
 
 export interface TraceBackup {
@@ -32,6 +33,7 @@ export async function restoreTraceBackup(repository: DataRepository, value: unkn
   const writes = [...grouped].map(([collection, entities]) => ({ collection, entities }) as RepositoryWrite)
   await repository.saveTransaction(writes)
   await migrateLegacyEvents(repository)
+  await deduplicateObservationSelections(repository)
   return records.length
 }
 
