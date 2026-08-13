@@ -7,7 +7,7 @@ const META_TAB = 'Meta';
 const COMMON_HEADERS = ['id', 'revision', 'remoteRevision', 'createdAt', 'updatedAt', 'deletedAt', 'originDeviceId'];
 const ENTITY_FIELDS = {
   categories: ['name', 'sortOrder', 'active'],
-  trackables: ['categoryId', 'active', 'archivedAt', 'currentVersion', 'tags', 'dataRole', 'icon', 'colorRef', 'behavior', 'quickLogTimingMode', 'recordSemantics', 'quickLogEnabled'],
+  trackables: ['categoryId', 'active', 'archivedAt', 'currentVersion', 'tags', 'dataRole', 'icon', 'colorRef', 'behavior', 'quickLogTimingMode', 'recordSemantics', 'quickLogEnabled', 'reminder'],
   trackableFields: ['ownerTrackableId', 'fieldTrackableId', 'fieldTrackableVersion', 'sortOrder', 'enabled', 'conditionalRule', 'completionBehavior', 'ownerTrackableVersion', 'required'],
   trackableDailyAssertions: ['date', 'trackableId', 'status', 'sourceRoutineId', 'recordedAt'],
   trackableVersions: ['trackableId', 'version', 'name', 'description', 'inputType', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'valueDirection', 'configuration', 'retiredAt'],
@@ -22,7 +22,7 @@ const ENTITY_FIELDS = {
   eventDailyAssertions: ['date', 'eventDefinitionId', 'status', 'sourceRoutineId', 'recordedAt'],
   relationships: ['sourceRecordId', 'targetRecordId', 'relationshipType', 'provenance', 'confirmedByUser', 'metadata'],
   relationshipAssessments: ['relationshipId', 'assessmentType', 'trackableId', 'value', 'recordedAt'],
-  settings: ['schemaVersion', 'themeId', 'reducedMotion', 'locale', 'dateFormat', 'timeFormat', 'firstDayOfWeek', 'units'],
+  settings: ['schemaVersion', 'themeId', 'reducedMotion', 'locale', 'dateFormat', 'timeFormat', 'firstDayOfWeek', 'units', 'dailyCheckInReminder'],
 };
 const TAB_NAMES = {
   categories: 'Categories', trackables: 'Trackables', trackableVersions: 'TrackableVersions',
@@ -148,7 +148,7 @@ function validateRecord_(record) {
 }
 
 function requiredField_(type, field) {
-  const optional = ['icon', 'colorRef', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'customChoiceValue', 'sourceRoutineId', 'trackableId', 'trackableVersion', 'ownerTrackableVersion', 'required', 'quickLogTimingMode', 'behavior'];
+  const optional = ['icon', 'colorRef', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'customChoiceValue', 'sourceRoutineId', 'trackableId', 'trackableVersion', 'ownerTrackableVersion', 'required', 'quickLogTimingMode', 'reminder', 'dailyCheckInReminder', 'behavior'];
   return optional.indexOf(field) < 0;
 }
 

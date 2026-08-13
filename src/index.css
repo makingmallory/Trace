@@ -683,6 +683,9 @@ h1 {
 }
 
 .settings-stack { display: grid; gap: var(--space-lg); }
+.reminder-card { align-items: start; }
+.reminder-card__controls { display: grid; gap: var(--space-sm); min-width: min(100%, 14rem); }
+.reminder-card__controls > label:first-child { font-weight: 650; }
 .settings-stack .sync-card { margin-bottom: 0; }
 
 .button-link,

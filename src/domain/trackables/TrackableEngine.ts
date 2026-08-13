@@ -13,6 +13,7 @@ import type {
   ObservationAnswer,
   ConditionalRule,
   TrackableField,
+  TrackableReminderConfig,
 } from '../models/index.ts'
 import type { DataRepository } from '../../data/repository/DataRepository.ts'
 import { isSupportedIcon } from '../../presets/iconLibrary.ts'
@@ -45,6 +46,7 @@ export interface TrackableDraft {
   allowOther?: boolean
   defaultAnswer?: { answer: ObservationAnswer; selectedOptionIds?: readonly string[] }
   fields?: readonly { trackableId: string; required?: boolean; conditionalRule?: ConditionalRule }[]
+  reminder?: TrackableReminderConfig
 }
 
 export interface TrackableFieldDetails {
@@ -96,6 +98,7 @@ function validateDraft(draft: TrackableDraft): void {
   if (!draft.categoryId) issues.push('Choose a category.')
   if (draft.recordSemantics && draft.recordSemantics !== 'daily_value' && draft.recordSemantics !== 'occurrence') issues.push('Choose Daily Value or Occurrence tracking.')
   if (draft.quickLogEnabled && draft.recordSemantics !== 'occurrence') issues.push('Quick Log is only available for Occurrence Trackables.')
+  if (draft.reminder && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.reminder.time) || draft.reminder.weekdays.length === 0 || draft.reminder.weekdays.some((day) => !Number.isInteger(day) || day < 0 || day > 6))) issues.push('Choose a valid reminder time and at least one day.')
   if (!isSupportedIcon(draft.icon)) issues.push('Choose a built-in icon or a short emoji.')
 
   if (draft.inputType === 'scale') {
@@ -296,7 +299,7 @@ export class TrackableEngine {
     const trackableId = this.createId()
     const trackable: Trackable = { id: trackableId, categoryId: draft.categoryId, active: true, archivedAt: null, currentVersion: 1,
       tags: normalizeTags(draft.tags), dataRole: draft.dataRole, recordSemantics: draft.recordSemantics ?? 'daily_value', quickLogEnabled: draft.recordSemantics === 'occurrence' && Boolean(draft.quickLogEnabled),
-      quickLogTimingMode: draft.recordSemantics === 'occurrence' && draft.quickLogEnabled ? draft.quickLogTimingMode ?? 'either' : undefined,
+      quickLogTimingMode: draft.recordSemantics === 'occurrence' && draft.quickLogEnabled ? draft.quickLogTimingMode ?? 'either' : undefined, reminder: draft.reminder,
       icon: draft.icon, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
     const version = this.makeVersion(trackableId, 1, draft, timestamp)
     const options = this.makeOptions(trackableId, 1, draft.options ?? [], timestamp)
@@ -320,7 +323,7 @@ export class TrackableEngine {
       tags: current.trackable.tags, icon: current.trackable.icon, configuration: baseConfiguration(current.version.configuration),
       allowOther: current.version.configuration.allowOther === true,
       defaultAnswer: current.version.configuration.defaultAnswer as unknown as TrackableDraft['defaultAnswer'],
-      fields: (current.fields ?? []).map(({ field }) => ({ trackableId: field.fieldTrackableId, required: field.required, conditionalRule: field.conditionalRule })),
+      fields: (current.fields ?? []).map(({ field }) => ({ trackableId: field.fieldTrackableId, required: field.required, conditionalRule: field.conditionalRule })), reminder: current.trackable.reminder,
     }
     const semanticChange = versionDefinition(currentDraft) !== versionDefinition(draft)
     const timestamp = this.timestamp()
@@ -328,7 +331,7 @@ export class TrackableEngine {
     const quickLogEnabled = recordSemantics === 'occurrence' && Boolean(draft.quickLogEnabled)
     const { behavior: _legacyBehavior, ...currentTrackable } = current.trackable
     const trackable: Trackable = { ...currentTrackable, categoryId: draft.categoryId, dataRole: draft.dataRole, recordSemantics, quickLogEnabled,
-      quickLogTimingMode: quickLogEnabled ? draft.quickLogTimingMode ?? 'either' : undefined, tags: normalizeTags(draft.tags), icon: draft.icon,
+      quickLogTimingMode: quickLogEnabled ? draft.quickLogTimingMode ?? 'either' : undefined, tags: normalizeTags(draft.tags), icon: draft.icon, reminder: draft.reminder,
       currentVersion: semanticChange ? current.trackable.currentVersion + 1 : current.trackable.currentVersion, updatedAt: timestamp, revision: current.trackable.revision + 1 }
     if (!semanticChange) {
       await this.repository.save('trackables', trackable)

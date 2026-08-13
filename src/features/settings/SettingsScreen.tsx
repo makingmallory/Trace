@@ -8,6 +8,7 @@ import type { SyncConnection } from '../../data/sync/SyncConnectionStore.ts'
 import { SYNC_METADATA_ID } from '../../data/sync/SyncService.ts'
 import { serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
 import { shareTextFile } from '../../platform/nativeFiles.ts'
+import { loadReminderSettings, saveDailyCheckInReminder } from '../reminders/reminderSettings.ts'
 
 type SetupMode = 'new' | 'existing' | null
 type RunState = 'idle' | 'connecting' | 'syncing' | 'success' | 'error'
@@ -25,6 +26,8 @@ export function SettingsScreen() {
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [pending, setPending] = useState(0)
   const [online, setOnline] = useState(() => navigator.onLine)
+  const [dailyReminderEnabled, setDailyReminderEnabled] = useState(false)
+  const [dailyReminderTime, setDailyReminderTime] = useState('21:00')
 
   async function refreshStatus(active = connection) {
     if (!active) { setLastSync(null); setPending(0); return }
@@ -36,6 +39,7 @@ export function SettingsScreen() {
   }
 
   useEffect(() => { void refreshStatus() }, [connection])
+  useEffect(() => { void loadReminderSettings(new IndexedDbDataRepository()).then((settings) => { setDailyReminderEnabled(Boolean(settings.dailyCheckInReminder?.enabled)); setDailyReminderTime(settings.dailyCheckInReminder?.time ?? '21:00') }) }, [])
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine)
     window.addEventListener('online', updateOnline)
@@ -101,6 +105,13 @@ export function SettingsScreen() {
     }
   }
 
+  async function saveDailyReminder() {
+    try {
+      await saveDailyCheckInReminder(new IndexedDbDataRepository(), { enabled: dailyReminderEnabled, time: dailyReminderTime })
+      setMessage('Daily Check-In reminder saved.'); setState('success')
+    } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Could not save the reminder.') }
+  }
+
   return (
     <ScreenPlaceholder eyebrow="Preferences" title="Settings" description="Manage tracking, backups, and how Trace works for you."><div className="settings-stack">
       <section className="sync-card" aria-labelledby="google-backup-heading">
@@ -125,6 +136,7 @@ export function SettingsScreen() {
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Restore Trace Data</h2><p>Restore a current backup or safely upgrade a pre-unification backup.</p></div><label className="button-link">Import JSON Backup<input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file) }} /></label></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Trackables</h2><p>Manage Daily Value and Occurrence Trackables in one place.</p></div><Link className="button-link" to="/trackables/manage">Manage Trackables</Link></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Daily Check-In</h2><p>Choose, order, and configure the questions in your daily routine.</p></div><Link className="button-link" to="/settings/nightly-check-in">Configure Routine</Link></div>
+      <section className="developer-card reminder-card" aria-labelledby="daily-reminder-heading"><div><p className="developer-card__label">Reminders</p><h2 id="daily-reminder-heading">Daily Check-In Reminder</h2><p>Remind me if I haven&apos;t completed my Daily Check-In.</p></div><div className="reminder-card__controls"><label><input type="checkbox" checked={dailyReminderEnabled} onChange={(event) => setDailyReminderEnabled(event.target.checked)} /> Enable Reminder</label><label className="form-field"><span>Time</span><input type="time" value={dailyReminderTime} onChange={(event) => setDailyReminderTime(event.target.value)} required /></label><button className="secondary-button" type="button" onClick={() => void saveDailyReminder()}>Save Reminder</button></div></section>
       </div>
     </ScreenPlaceholder>
   )

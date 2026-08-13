@@ -37,6 +37,14 @@ Implementation details and upgrade limitations are documented in `docs/unified-t
 - Editing an existing Trackable opens without forcing focus into Name; intentional creation-time Name autofocus remains allowed.
 - Single Choice and Multi Choice controls adapt their columns to available width and keep long labels fully readable without truncation.
 
+## Batch 3 Reminders V1 amendment
+
+- One optional Daily Check-In reminder stores enabled state and a local wall-clock `HH:mm` time. It is due only after that time while today’s Check-In is not completed; drafts do not suppress it.
+- An active Trackable may have one optional reminder with local wall-clock time, selected weekdays (Sunday `0` through Saturday `6`), and `skipIfAlreadyLoggedToday`, which defaults to enabled when configured.
+- Occurrence Trackables are safely satisfied only by a non-deleted same-local-date Quick Log. Boolean Daily Value Trackables are safely satisfied only by an explicit Yes on today’s routine record. Explicit No, missing, drafts, and ambiguous input types are never guessed as completion.
+- Reminder configuration is durable user configuration included in local backup and Google Sheets sync. Per-device firing markers are intentionally local-only, preventing duplicate delivery without creating cross-device sync conflicts.
+- The browser implementation evaluates due reminder plans and navigation targets; a native local-notification adapter boundary is defined but native permission, scheduling, and delivery remain deferred.
+
 **Version:** 0.1  
 **Status:** Pre-development source of truth  
 **Date:** August 10, 2026  

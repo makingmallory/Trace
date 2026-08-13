@@ -5,7 +5,7 @@ import { deserializeEntity, parseSyncRecord, serializeEntity, syncedCollections,
 const timestamps = { id: 'entity-1', createdAt: '2026-08-10T01:02:03.000Z', updatedAt: '2026-08-11T04:05:06.000Z', deletedAt: null, revision: 3, originDeviceId: 'device-1' }
 const payloads: Record<SyncedCollection, Record<string, unknown>> = {
   categories: { name: 'Category', sortOrder: 0, active: true },
-  trackables: { categoryId: 'cat', active: true, archivedAt: null, currentVersion: 2, tags: ['tag'], dataRole: 'measurement', recordSemantics: 'daily_value', quickLogEnabled: false },
+  trackables: { categoryId: 'cat', active: true, archivedAt: null, currentVersion: 2, tags: ['tag'], dataRole: 'measurement', recordSemantics: 'daily_value', quickLogEnabled: false, reminder: { enabled: true, time: '21:00', weekdays: [1, 2], skipIfAlreadyLoggedToday: true } },
   trackableFields: { ownerTrackableId: 'quick', fieldTrackableId: 'track', fieldTrackableVersion: 2, sortOrder: 0, enabled: true, completionBehavior: 'optional' },
   trackableDailyAssertions: { date: '2026-08-10', trackableId: 'quick', status: 'did_not_occur', recordedAt: '2026-08-11T03:00:00.000Z' },
   trackableVersions: { trackableId: 'track', version: 2, name: 'Metric', inputType: 'multiSelect', valueDirection: 'neutral', configuration: { emptyAllowed: true }, retiredAt: null },
@@ -20,7 +20,7 @@ const payloads: Record<SyncedCollection, Record<string, unknown>> = {
   eventDailyAssertions: { date: '2026-08-10', eventDefinitionId: 'event', status: 'did_not_occur', recordedAt: '2026-08-11T03:00:00.000Z' },
   relationships: { sourceRecordId: 'source', targetRecordId: 'target', relationshipType: 'associated_with', provenance: 'manual', confirmedByUser: true, metadata: { note: 'kept' } },
   relationshipAssessments: { relationshipId: 'relationship', assessmentType: 'effectiveness', value: 0, recordedAt: '2026-08-11T03:00:00.000Z' },
-  settings: { schemaVersion: 1, themeId: 'fantasy', reducedMotion: false, locale: 'en-US', dateFormat: 'local', timeFormat: '12-hour', firstDayOfWeek: 0, units: {} },
+  settings: { schemaVersion: 1, themeId: 'fantasy', reducedMotion: false, locale: 'en-US', dateFormat: 'local', timeFormat: '12-hour', firstDayOfWeek: 0, units: {}, dailyCheckInReminder: { enabled: true, time: '21:00' } },
 }
 
 describe('production sync protocol', () => {

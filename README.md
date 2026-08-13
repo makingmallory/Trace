@@ -21,6 +21,7 @@ The current implementation includes:
 - Android JSON sharing, system-browser external links, and a compact quick-action widget
 - launcher, adaptive, splash, PWA, and in-app branding generated from `Trace.png`
 - domain, persistence, protocol, and reconciliation tests
+- browser-evaluated Daily Check-In and Trackable reminders with local-time schedules; native notifications remain deferred
 
 Predictions, advanced analytics, configurable widget shortcuts, and broader polish remain deferred to later milestones.
 

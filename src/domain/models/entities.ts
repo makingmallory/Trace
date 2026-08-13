@@ -55,6 +55,21 @@ export interface Trackable extends SyncableEntity {
   quickLogTimingMode?: EventTimingMode
   icon?: IconReference
   colorRef?: string
+  /** Current scheduling preference; it does not alter historical answer meaning. */
+  reminder?: TrackableReminderConfig
+}
+
+/** Local wall-clock time (`HH:mm`); weekdays use Sunday 0 through Saturday 6. */
+export interface TrackableReminderConfig {
+  enabled: boolean
+  time: string
+  weekdays: readonly number[]
+  skipIfAlreadyLoggedToday: boolean
+}
+
+export interface DailyCheckInReminderConfig {
+  enabled: boolean
+  time: string
 }
 
 export interface TrackableVersion extends SyncableEntity {
@@ -226,6 +241,7 @@ export interface Settings extends SyncableEntity {
   timeFormat: '12-hour' | '24-hour'
   firstDayOfWeek: number
   units: Readonly<Record<string, string>>
+  dailyCheckInReminder?: DailyCheckInReminderConfig
 }
 
 export interface SyncMetadata extends Entity {

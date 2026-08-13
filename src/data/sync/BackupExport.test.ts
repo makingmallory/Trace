@@ -39,4 +39,15 @@ describe('Trace JSON backup export', () => {
     expect(await target.getById('trackableFields', 'field')).toMatchObject({ ownerTrackableVersion: 1, fieldTrackableId: 'dose', required: true })
     expect(await target.getById('observations', 'observation')).toMatchObject({ customChoiceValue: 'Custom value' })
   })
+
+  it('round-trips Daily Check-In and Trackable reminder configuration without delivery state', async () => {
+    const source = new InMemoryDataRepository()
+    const base = { createdAt: '2026-08-10T00:00:00.000Z', updatedAt: '2026-08-10T00:00:00.000Z', deletedAt: null, revision: 1 }
+    await source.save('settings', { ...base, id: 'settings', schemaVersion: 2, themeId: 'fantasy', reducedMotion: false, locale: 'en-US', dateFormat: 'local', timeFormat: '12-hour', firstDayOfWeek: 0, units: {}, dailyCheckInReminder: { enabled: true, time: '21:00' } })
+    await source.save('trackables', { ...base, id: 'pilates', categoryId: 'activity', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'behavior', recordSemantics: 'occurrence', quickLogEnabled: true, reminder: { enabled: true, time: '19:00', weekdays: [1, 3, 5], skipIfAlreadyLoggedToday: true } })
+    const target = new InMemoryDataRepository()
+    await restoreTraceBackup(target, await createTraceBackup(source))
+    expect(await target.getById('settings', 'settings')).toMatchObject({ dailyCheckInReminder: { time: '21:00' } })
+    expect(await target.getById('trackables', 'pilates')).toMatchObject({ reminder: { weekdays: [1, 3, 5], skipIfAlreadyLoggedToday: true } })
+  })
 })
