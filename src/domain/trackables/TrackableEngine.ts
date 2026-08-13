@@ -3,11 +3,13 @@ import type {
   DataRole,
   IconReference,
   InputType,
+  EventTimingMode,
   JsonValue,
   Trackable,
   TrackableOption,
   TrackableVersion,
   ValueDirection,
+  TrackableRecordSemantics,
 } from '../models/index.ts'
 import type { DataRepository } from '../../data/repository/DataRepository.ts'
 import { isSupportedIcon } from '../../presets/iconLibrary.ts'
@@ -24,6 +26,9 @@ export interface TrackableDraft {
   description?: string
   categoryId: string
   inputType: InputType
+  recordSemantics?: TrackableRecordSemantics
+  quickLogEnabled?: boolean
+  quickLogTimingMode?: EventTimingMode
   dataRole: DataRole
   valueDirection: ValueDirection
   unit?: string
@@ -71,6 +76,8 @@ function validateDraft(draft: TrackableDraft): void {
   if (!draft.name.trim()) issues.push('Name is required.')
   if (draft.name.trim().length > 100) issues.push('Name must be 100 characters or fewer.')
   if (!draft.categoryId) issues.push('Choose a category.')
+  if (draft.recordSemantics && draft.recordSemantics !== 'daily_value' && draft.recordSemantics !== 'occurrence') issues.push('Choose Daily Value or Occurrence tracking.')
+  if (draft.quickLogEnabled && draft.recordSemantics !== 'occurrence') issues.push('Quick Log is only available for Occurrence Trackables.')
   if (!isSupportedIcon(draft.icon)) issues.push('Choose a built-in icon or a short emoji.')
 
   if (draft.inputType === 'scale') {
@@ -100,6 +107,7 @@ function validateDraft(draft: TrackableDraft): void {
 function versionDefinition(draft: TrackableDraft): string {
   return JSON.stringify({
     name: draft.name.trim(), description: draft.description?.trim() || undefined, inputType: draft.inputType,
+    recordSemantics: draft.recordSemantics ?? 'daily_value', quickLogTimingMode: draft.quickLogTimingMode,
     unit: draft.unit?.trim() || undefined, valueDirection: draft.valueDirection,
     scaleMin: draft.scaleMin, scaleMax: draft.scaleMax, scaleStep: draft.scaleStep,
     configuration: draft.configuration ?? {},
@@ -226,7 +234,7 @@ export class TrackableEngine {
   }
 
   private presetDraft(item: TrackablePreset): TrackableDraft {
-    return { name: item.name, description: item.description, categoryId: item.categoryId, inputType: item.inputType,
+    return { name: item.name, description: item.description, categoryId: item.categoryId, inputType: item.inputType, recordSemantics: 'daily_value', quickLogEnabled: false,
       dataRole: item.dataRole, valueDirection: item.valueDirection, unit: item.unit,
       scaleMin: item.scale?.min, scaleMax: item.scale?.max, scaleStep: item.scale?.step,
       options: item.options?.map((label) => ({ label })), tags: item.tags, icon: item.icon }
@@ -239,7 +247,9 @@ export class TrackableEngine {
     const timestamp = this.timestamp()
     const trackableId = this.createId()
     const trackable: Trackable = { id: trackableId, categoryId: draft.categoryId, active: true, archivedAt: null, currentVersion: 1,
-      tags: normalizeTags(draft.tags), dataRole: draft.dataRole, icon: draft.icon, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+      tags: normalizeTags(draft.tags), dataRole: draft.dataRole, recordSemantics: draft.recordSemantics ?? 'daily_value', quickLogEnabled: draft.recordSemantics === 'occurrence' && Boolean(draft.quickLogEnabled),
+      quickLogTimingMode: draft.recordSemantics === 'occurrence' && draft.quickLogEnabled ? draft.quickLogTimingMode ?? 'either' : undefined,
+      icon: draft.icon, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
     const version = this.makeVersion(trackableId, 1, draft, timestamp)
     const options = this.makeOptions(trackableId, 1, draft.options ?? [], timestamp)
     await this.repository.save('trackables', trackable)
@@ -254,14 +264,19 @@ export class TrackableEngine {
     const current = await this.getDetails(id)
     const currentDraft: TrackableDraft = {
       name: current.version.name, description: current.version.description, categoryId: current.trackable.categoryId,
-      inputType: current.version.inputType, dataRole: current.trackable.dataRole, valueDirection: current.version.valueDirection,
+      inputType: current.version.inputType, recordSemantics: current.trackable.recordSemantics ?? 'daily_value', quickLogEnabled: current.trackable.quickLogEnabled ?? false, quickLogTimingMode: current.trackable.quickLogTimingMode,
+      dataRole: current.trackable.dataRole, valueDirection: current.version.valueDirection,
       unit: current.version.unit, scaleMin: current.version.scaleMin, scaleMax: current.version.scaleMax, scaleStep: current.version.scaleStep,
       options: current.options.filter((option) => option.active).map((option) => ({ optionId: option.optionId, label: option.label, icon: option.icon })),
       tags: current.trackable.tags, icon: current.trackable.icon, configuration: current.version.configuration,
     }
     const semanticChange = versionDefinition(currentDraft) !== versionDefinition(draft)
     const timestamp = this.timestamp()
-    const trackable: Trackable = { ...current.trackable, categoryId: draft.categoryId, dataRole: draft.dataRole, tags: normalizeTags(draft.tags), icon: draft.icon,
+    const recordSemantics = draft.recordSemantics ?? 'daily_value'
+    const quickLogEnabled = recordSemantics === 'occurrence' && Boolean(draft.quickLogEnabled)
+    const { behavior: _legacyBehavior, ...currentTrackable } = current.trackable
+    const trackable: Trackable = { ...currentTrackable, categoryId: draft.categoryId, dataRole: draft.dataRole, recordSemantics, quickLogEnabled,
+      quickLogTimingMode: quickLogEnabled ? draft.quickLogTimingMode ?? 'either' : undefined, tags: normalizeTags(draft.tags), icon: draft.icon,
       currentVersion: semanticChange ? current.trackable.currentVersion + 1 : current.trackable.currentVersion, updatedAt: timestamp, revision: current.trackable.revision + 1 }
     if (!semanticChange) {
       await this.repository.save('trackables', trackable)

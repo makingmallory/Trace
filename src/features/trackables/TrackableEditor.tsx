@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import type { DataRole, InputType, ValueDirection } from '../../domain/models/index.ts'
+import type { DataRole, EventTimingMode, InputType, ValueDirection } from '../../domain/models/index.ts'
 import { TrackableValidationError, type TrackableDetails, type TrackableDraft, type TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
 import { builtInIcons } from '../../presets/iconLibrary.ts'
 import { trackableEngine } from './trackableEngine.ts'
@@ -11,13 +11,14 @@ const roleLabels: Record<DataRole, string> = {
 }
 
 function initialDraft(categoryId: string): TrackableDraft {
-  return { name: '', categoryId, inputType: 'scale', dataRole: 'other', valueDirection: 'neutral', scaleMin: 1, scaleMax: 5, scaleStep: 1, tags: [], icon: { type: 'library', value: 'sparkle' } }
+  return { name: '', categoryId, inputType: 'scale', recordSemantics: 'daily_value', quickLogEnabled: false, dataRole: 'other', valueDirection: 'neutral', scaleMin: 1, scaleMax: 5, scaleStep: 1, tags: [], icon: { type: 'library', value: 'sparkle' } }
 }
 
 function detailsDraft(details: TrackableDetails): TrackableDraft {
   return {
     name: details.version.name, description: details.version.description, categoryId: details.trackable.categoryId,
-    inputType: details.version.inputType, dataRole: details.trackable.dataRole, valueDirection: details.version.valueDirection,
+    inputType: details.version.inputType, recordSemantics: details.trackable.recordSemantics ?? 'daily_value', quickLogEnabled: details.trackable.quickLogEnabled ?? false, quickLogTimingMode: details.trackable.quickLogTimingMode,
+    dataRole: details.trackable.dataRole, valueDirection: details.version.valueDirection,
     unit: details.version.unit, scaleMin: details.version.scaleMin, scaleMax: details.version.scaleMax, scaleStep: details.version.scaleStep,
     options: details.options.filter((option) => option.active).map((option) => ({ optionId: option.optionId, label: option.label, icon: option.icon })),
     tags: details.trackable.tags, icon: details.trackable.icon, configuration: details.version.configuration,
@@ -57,9 +58,11 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
 
   return <form className="trackable-form trackable-editor-form" onSubmit={submit}>
     <label className="form-field"><span>Name</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Morning energy" maxLength={100} required autoFocus /></label>
+    <fieldset className="event-field-editor"><legend>How is this tracked?</legend><div className="segmented"><button type="button" aria-pressed={draft.recordSemantics === 'daily_value'} onClick={() => setDraft({ ...draft, recordSemantics: 'daily_value', quickLogEnabled: false, quickLogTimingMode: undefined })}>Daily Value<small>one answer for the day</small></button><button type="button" aria-pressed={draft.recordSemantics === 'occurrence'} onClick={() => setDraft({ ...draft, recordSemantics: 'occurrence', inputType: 'boolean', quickLogTimingMode: draft.quickLogTimingMode ?? 'either' })}>Occurrence<small>zero or more times per day</small></button></div></fieldset>
+    {draft.recordSemantics === 'occurrence' && <label className="form-field"><span><input type="checkbox" checked={Boolean(draft.quickLogEnabled)} onChange={(event) => setDraft({ ...draft, quickLogEnabled: event.target.checked, quickLogTimingMode: event.target.checked ? draft.quickLogTimingMode ?? 'either' : undefined })} /> Available in Quick Log</span><small>Nightly inclusion is configured separately in your routine.</small></label>}
     <div className="form-row">
       <label className="form-field"><span>Category</span><select value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>{library.categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.active ? '' : ' (hidden)'}</option>)}</select></label>
-      <label className="form-field"><span>Answer style</span><select value={draft.inputType} onChange={(event) => changeInputType(event.target.value as InputType)}>{inputTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      {draft.recordSemantics === 'daily_value' ? <label className="form-field"><span>Answer style</span><select value={draft.inputType} onChange={(event) => changeInputType(event.target.value as InputType)}>{inputTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : draft.quickLogEnabled ? <label className="form-field"><span>Quick Log timing</span><select value={draft.quickLogTimingMode ?? 'either'} onChange={(event) => setDraft({ ...draft, quickLogTimingMode: event.target.value as EventTimingMode })}><option value="point">Point in time</option><option value="duration">Duration</option><option value="either">Point or duration</option><option value="dayOnly">Date only</option></select></label> : null}
     </div>
     {draft.inputType === 'scale' && <fieldset className="inline-fields"><legend>Scale</legend><label>From<input type="number" value={draft.scaleMin ?? ''} onChange={(event) => setDraft({ ...draft, scaleMin: event.target.valueAsNumber })} /></label><label>To<input type="number" value={draft.scaleMax ?? ''} onChange={(event) => setDraft({ ...draft, scaleMax: event.target.valueAsNumber })} /></label><label>Step<input type="number" min="0.01" step="any" value={draft.scaleStep ?? ''} onChange={(event) => setDraft({ ...draft, scaleStep: event.target.valueAsNumber })} /></label></fieldset>}
     {isChoice && <label className="form-field"><span>Choices <small>one per line</small></span><textarea value={optionsText} onChange={(event) => setOptionsText(event.target.value)} rows={5} placeholder={'Low\nMedium\nHigh'} required /></label>}

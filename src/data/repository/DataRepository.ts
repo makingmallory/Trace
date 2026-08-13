@@ -13,6 +13,8 @@ import type {
   Settings,
   SyncMetadata,
   Trackable,
+  TrackableDailyAssertion,
+  TrackableField,
   TrackableOption,
   TrackableVersion,
 } from '../../domain/models/index.ts'
@@ -22,6 +24,8 @@ export interface RepositoryCollectionMap {
   trackables: Trackable
   trackableVersions: TrackableVersion
   trackableOptions: TrackableOption
+  trackableFields: TrackableField
+  trackableDailyAssertions: TrackableDailyAssertion
   routines: Routine
   routineItems: RoutineItem
   eventDefinitions: EventDefinition
@@ -50,6 +54,8 @@ export const repositoryCollections: readonly RepositoryCollection[] = [
   'trackables',
   'trackableVersions',
   'trackableOptions',
+  'trackableFields',
+  'trackableDailyAssertions',
   'routines',
   'routineItems',
   'eventDefinitions',

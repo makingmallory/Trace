@@ -7,5 +7,5 @@ export function homeEventTiming(record: LogRecord): string {
 }
 
 export function homeEventEditPath(recordId: string): string {
-  return `/history/events/${encodeURIComponent(recordId)}/edit`
+  return `/history/quick-log/${encodeURIComponent(recordId)}/edit`
 }

@@ -1,6 +1,6 @@
 # Trace
 
-Trace is a flexible, local-first personal health and pattern tracker. It supports user-defined Trackables and Events without making any named health condition structurally special. `PROJECT_SPEC.md` is the product and architecture source of truth.
+Trace is a flexible, local-first personal health and pattern tracker. Everything tracked is a user-defined Trackable with Daily Value or Occurrence record semantics and independently configured Nightly/Quick Log entry surfaces; no named health condition is structurally special. `PROJECT_SPEC.md` is the product and architecture source of truth.
 
 ## Current status
 

@@ -28,11 +28,15 @@ function App() {
         <Route path="check-in" element={<CheckInScreen />} />
         <Route path="history/check-in/:localDate" element={<CheckInScreen />} />
         <Route path="events" element={<QuickLogScreen />} />
+        <Route path="quick-log" element={<QuickLogScreen />} />
         <Route path="events/log/:eventDefinitionId" element={<LogEventScreen />} />
+        <Route path="quick-log/:eventDefinitionId" element={<LogEventScreen />} />
         <Route path="history/events/:recordId/edit" element={<LogEventScreen />} />
+        <Route path="history/quick-log/:recordId/edit" element={<LogEventScreen />} />
         <Route path="events/manage" element={<ManageEventsScreen />} />
         <Route path="events/manage/new" element={<EventEditorScreen />} />
         <Route path="events/manage/:eventDefinitionId" element={<EventEditorScreen />} />
+        <Route path="trackables/quick-log/:eventDefinitionId" element={<EventEditorScreen />} />
         <Route path="trends" element={<TrendsScreen />} />
         <Route path="history" element={<HistoryScreen />} />
         <Route path="trackables" element={<TrackablesScreen />} />

@@ -28,6 +28,8 @@ import type {
   TimePrecision,
   TimeOfDayBucket,
   TrendTrackingMode,
+  TrackableBehavior,
+  TrackableRecordSemantics,
   ValueDirection,
 } from './valueTypes.ts'
 
@@ -44,6 +46,13 @@ export interface Trackable extends SyncableEntity {
   currentVersion: number
   tags: readonly string[]
   dataRole: DataRole
+  /** Controls storage cardinality independently from where the Trackable can be entered. */
+  recordSemantics?: TrackableRecordSemantics
+  /** Occurrence Trackables may independently opt into the Quick Log entry surface. */
+  quickLogEnabled?: boolean
+  /** @deprecated Compatibility input for the original schema-v2 implementation; migration removes it. */
+  behavior?: TrackableBehavior
+  quickLogTimingMode?: EventTimingMode
   icon?: IconReference
   colorRef?: string
 }
@@ -85,6 +94,7 @@ export interface Routine extends SyncableEntity {
 
 export type RoutineItemTarget =
   | { kind: 'trackable'; trackableId: EntityId }
+  /** Legacy restore input only. Schema migration rewrites this target. */
   | { kind: 'event'; eventDefinitionId: EntityId }
 
 export interface RoutineItem extends SyncableEntity {
@@ -124,10 +134,23 @@ export interface EventField extends SyncableEntity {
   completionBehavior: CompletionBehavior
 }
 
+export interface TrackableField extends SyncableEntity {
+  ownerTrackableId: EntityId
+  fieldTrackableId: EntityId
+  fieldTrackableVersion: number
+  sortOrder: number
+  enabled: boolean
+  conditionalRule?: ConditionalRule
+  completionBehavior: CompletionBehavior
+}
+
 export interface LogRecord extends SyncableEntity {
   recordKind: RecordKind
   routineId?: EntityId
   eventDefinitionId?: EntityId
+  trackableId?: EntityId
+  /** Owner definition version for a Quick Log occurrence. */
+  trackableVersion?: number
   eventTimingKind?: EventOccurrenceKind
   localDate: ISODate
   startTimePrecision: TimePrecision
@@ -159,6 +182,14 @@ export interface ObservationOptionSelection extends SyncableEntity {
 export interface EventDailyAssertion extends SyncableEntity {
   date: ISODate
   eventDefinitionId: EntityId
+  status: EventAssertionStatus
+  sourceRoutineId?: EntityId
+  recordedAt: ISODateTime
+}
+
+export interface TrackableDailyAssertion extends SyncableEntity {
+  date: ISODate
+  trackableId: EntityId
   status: EventAssertionStatus
   sourceRoutineId?: EntityId
   recordedAt: ISODateTime

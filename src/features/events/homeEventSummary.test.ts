@@ -21,6 +21,6 @@ describe('Home event timing presentation', () => {
   })
 
   it('routes a summary event to its stable record editor', () => {
-    expect(homeEventEditPath('record/with spaces')).toBe('/history/events/record%2Fwith%20spaces/edit')
+    expect(homeEventEditPath('record/with spaces')).toBe('/history/quick-log/record%2Fwith%20spaces/edit')
   })
 })

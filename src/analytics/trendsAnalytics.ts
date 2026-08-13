@@ -1,5 +1,6 @@
 import type { TrendsData } from './AnalyticsProvider.ts'
 import type { InputType, Observation, ObservationAnswer } from '../domain/models/index.ts'
+import { isOccurrenceTrackable } from '../domain/trackables/trackableSemantics.ts'
 
 export type TrendRange = 7 | 30 | 90 | 'all'
 export type TrendMetricKind = 'numeric' | 'categorical'
@@ -75,10 +76,11 @@ function activeRecordedObservations(data: TrendsData) {
 
 export function trendMetricOptions(data: TrendsData): readonly TrendMetricOption[] {
   const recordedIds = new Set(activeRecordedObservations(data).map(({ observation }) => observation.trackableId))
+  const loggedIds = new Set(data.logRecords.filter((record) => record.recordKind === 'quick_log' && record.trackableId && !record.deletedAt).map((record) => record.trackableId!))
   return data.trackables.flatMap((trackable): TrendMetricOption[] => {
-    if (!trackable.active || trackable.deletedAt || !recordedIds.has(trackable.id)) return []
+    if (!trackable.active || trackable.deletedAt || (!recordedIds.has(trackable.id) && !loggedIds.has(trackable.id))) return []
     const current = data.trackableVersions.find((version) => version.trackableId === trackable.id && version.version === trackable.currentVersion && !version.deletedAt)
-    const kind = current ? metricKind(current.inputType) : null
+    const kind = isOccurrenceTrackable(trackable) ? 'numeric' : current ? metricKind(current.inputType) : null
     return current && kind ? [{ trackableId: trackable.id, name: current.name, kind }] : []
   }).sort((left, right) => left.name.localeCompare(right.name))
 }
@@ -87,7 +89,7 @@ export function hasCompatibleActiveTrackable(data: TrendsData): boolean {
   return data.trackables.some((trackable) => {
     if (!trackable.active || trackable.deletedAt) return false
     const current = data.trackableVersions.find((version) => version.trackableId === trackable.id && version.version === trackable.currentVersion && !version.deletedAt)
-    return Boolean(current && metricKind(current.inputType))
+    return Boolean(current && (isOccurrenceTrackable(trackable) || metricKind(current.inputType)))
   })
 }
 
@@ -121,6 +123,16 @@ export function buildTrendSummary(data: TrendsData, trackableId: string, range: 
   const kind = currentVersion ? metricKind(currentVersion.inputType) : null
   if (!currentVersion || !kind) return null
   const cutoff = range === 'all' ? null : cutoffDate(today, range)
+  if (isOccurrenceTrackable(trackable)) {
+    const counts = new Map<string, number>()
+    for (const record of data.logRecords.filter((item) => item.recordKind === 'quick_log' && item.trackableId === trackableId && !item.deletedAt && (!cutoff || item.localDate >= cutoff) && item.localDate <= today)) {
+      counts.set(record.localDate, (counts.get(record.localDate) ?? 0) + 1)
+    }
+    const points = [...counts].sort(([left], [right]) => left.localeCompare(right)).map(([localDate, value]) => ({ observationId: `quick-log:${trackableId}:${localDate}`, localDate, value, display: String(value), versionName: currentVersion.name }))
+    const values = points.map((point) => point.value)
+    return { kind: 'numeric', name: currentVersion.name, unit: 'entries', points, count: values.reduce((sum, value) => sum + value, 0), latest: points.at(-1) ?? null,
+      average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null, min: values.length ? Math.min(...values) : null, max: values.length ? Math.max(...values) : null }
+  }
   const candidates = activeRecordedObservations(data)
     .filter(({ observation, record }) => observation.trackableId === trackableId && (!cutoff || record.localDate >= cutoff) && record.localDate <= today)
     .sort((left, right) => left.record.localDate.localeCompare(right.record.localDate) || left.observation.createdAt.localeCompare(right.observation.createdAt) || left.observation.id.localeCompare(right.observation.id))

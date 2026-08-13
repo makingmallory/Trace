@@ -24,10 +24,10 @@ Connecting a Sheet establishes ongoing sync. **Import backup** is a separate one
 
 `Meta` stores `format`, sync/schema versions, and the global checkpoint. Canonical tabs are:
 
-- `Categories`, `Trackables`, `TrackableVersions`, `TrackableOptions`
+- `Categories`, `Trackables`, `TrackableVersions`, `TrackableOptions`, `TrackableFields`
 - `Routines`, `RoutineItems`
-- `EventDefinitions`, `EventFields`
-- `LogRecords`, `Observations`, `ObservationSelections`, `EventDailyAssertions`
+- `LogRecords`, `Observations`, `ObservationSelections`, `TrackableDailyAssertions`
+- legacy `EventDefinitions`, `EventFields`, and `EventDailyAssertions` tabs when upgrading schema v1
 - `Relationships`, `RelationshipAssessments`, `Settings`
 
 Every row stores its stable `id`, entity `revision`, server `remoteRevision`, creation/update timestamps, tombstone timestamp, and optional origin device. Entity fields have deterministic columns. Structured fields are JSON values in their named columns so arrays, nested rules, `null`, zero, and false remain unambiguous and machine-readable. Rows are stable-ID upserts; retrying a batch does not append duplicates. Direct editing of canonical tabs is not supported in V1.

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ScreenPlaceholder } from '../../components/ScreenPlaceholder.tsx'
 import { IndexedDbDataRepository } from '../../data/local/IndexedDbDataRepository.ts'
-import { createTraceBackup, downloadTraceBackup } from '../../data/sync/BackupExport.ts'
+import { createTraceBackup, downloadTraceBackup, restoreTraceBackup } from '../../data/sync/BackupExport.ts'
 import { GoogleSheetsAppsScriptSyncProvider } from '../../data/sync/google/GoogleSheetsAppsScriptSyncProvider.ts'
 import type { SyncConnection } from '../../data/sync/SyncConnectionStore.ts'
 import { SYNC_METADATA_ID } from '../../data/sync/SyncService.ts'
@@ -92,6 +92,15 @@ export function SettingsScreen() {
     }
   }
 
+  async function importBackup(file: File) {
+    try {
+      const count = await restoreTraceBackup(new IndexedDbDataRepository(), JSON.parse(await file.text()))
+      setState('success'); setMessage(`Restored and upgraded ${count} backup records. Reload Trace to review them.`)
+    } catch (error) {
+      setState('error'); setMessage(error instanceof Error ? error.message : 'Could not restore this backup. Your existing data is unchanged.')
+    }
+  }
+
   return (
     <ScreenPlaceholder eyebrow="Preferences" title="Settings" description="Manage tracking, backups, and how Trace works for you."><div className="settings-stack">
       <section className="sync-card" aria-labelledby="google-backup-heading">
@@ -113,7 +122,8 @@ export function SettingsScreen() {
         {message ? <p className={`sync-message sync-message--${state}`} role="status">{message}</p> : null}
       </section>
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Export Trace Data</h2><p>Download a full-fidelity JSON snapshot. This does not change your ongoing Google Sheets connection.</p></div><button className="button-link" type="button" onClick={() => void exportBackup()}>Export JSON Backup</button></div>
-      <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Event Types</h2><p>Create, order fields, archive, and reactivate the choices in Quick Log.</p></div><Link className="button-link" to="/events/manage">Manage Events</Link></div>
+      <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Restore Trace Data</h2><p>Restore a current backup or safely upgrade a pre-unification backup.</p></div><label className="button-link">Import JSON Backup<input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file) }} /></label></div>
+      <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Trackables</h2><p>Manage Daily Value and Occurrence Trackables in one place.</p></div><Link className="button-link" to="/trackables/manage">Manage Trackables</Link></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Nightly Check-In</h2><p>Choose, order, and configure the questions in your daily routine.</p></div><Link className="button-link" to="/settings/nightly-check-in">Configure Routine</Link></div>
       </div>
     </ScreenPlaceholder>

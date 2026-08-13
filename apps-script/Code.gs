@@ -1,20 +1,22 @@
 /** Trace Milestone 5 production sync endpoint. Bound to one user-owned Sheet. @OnlyCurrentDoc */
 const TRACE_FORMAT = 'trace-sync';
 const SYNC_VERSION = 1;
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const MAX_BATCH_SIZE = 250;
 const META_TAB = 'Meta';
 const COMMON_HEADERS = ['id', 'revision', 'remoteRevision', 'createdAt', 'updatedAt', 'deletedAt', 'originDeviceId'];
 const ENTITY_FIELDS = {
   categories: ['name', 'sortOrder', 'active'],
-  trackables: ['categoryId', 'active', 'archivedAt', 'currentVersion', 'tags', 'dataRole', 'icon', 'colorRef'],
+  trackables: ['categoryId', 'active', 'archivedAt', 'currentVersion', 'tags', 'dataRole', 'icon', 'colorRef', 'behavior', 'quickLogTimingMode', 'recordSemantics', 'quickLogEnabled'],
+  trackableFields: ['ownerTrackableId', 'fieldTrackableId', 'fieldTrackableVersion', 'sortOrder', 'enabled', 'conditionalRule', 'completionBehavior'],
+  trackableDailyAssertions: ['date', 'trackableId', 'status', 'sourceRoutineId', 'recordedAt'],
   trackableVersions: ['trackableId', 'version', 'name', 'description', 'inputType', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'valueDirection', 'configuration', 'retiredAt'],
   trackableOptions: ['optionId', 'trackableId', 'trackableVersion', 'storedValue', 'label', 'icon', 'colorRef', 'sortOrder', 'active'],
   routines: ['name', 'icon', 'active', 'scheduleType'],
   routineItems: ['routineId', 'target', 'sortOrder', 'section', 'enabled', 'frequency', 'weekdays', 'conditionalRule', 'completionBehavior', 'trendTrackingMode', 'eventReminderBehavior'],
   eventDefinitions: ['name', 'description', 'categoryId', 'icon', 'colorRef', 'timingMode', 'dataRole', 'active', 'nightlyReminderDefault', 'treatmentFollowUpEnabled'],
   eventFields: ['eventDefinitionId', 'trackableId', 'trackableVersion', 'sortOrder', 'enabled', 'conditionalRule', 'completionBehavior'],
-  logRecords: ['recordKind', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'localDate', 'startTimePrecision', 'startTime', 'startTimeOfDay', 'endLocalDate', 'endTimePrecision', 'endTime', 'endTimeOfDay', 'ongoing', 'timezone', 'status', 'source'],
+  logRecords: ['recordKind', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'localDate', 'startTimePrecision', 'startTime', 'startTimeOfDay', 'endLocalDate', 'endTimePrecision', 'endTime', 'endTimeOfDay', 'ongoing', 'timezone', 'status', 'source', 'trackableId', 'trackableVersion'],
   observations: ['logRecordId', 'trackableId', 'trackableVersion', 'answer', 'trendValue'],
   observationSelections: ['observationId', 'optionId'],
   eventDailyAssertions: ['date', 'eventDefinitionId', 'status', 'sourceRoutineId', 'recordedAt'],
@@ -24,6 +26,7 @@ const ENTITY_FIELDS = {
 };
 const TAB_NAMES = {
   categories: 'Categories', trackables: 'Trackables', trackableVersions: 'TrackableVersions',
+  trackableFields: 'TrackableFields', trackableDailyAssertions: 'TrackableDailyAssertions',
   trackableOptions: 'TrackableOptions', routines: 'Routines', routineItems: 'RoutineItems',
   eventDefinitions: 'EventDefinitions', eventFields: 'EventFields', logRecords: 'LogRecords',
   observations: 'Observations', observationSelections: 'ObservationSelections',
@@ -64,15 +67,21 @@ function ensureWorkbook_() {
   const values = meta.getDataRange().getValues();
   const map = {};
   for (let row = 1; row < values.length; row += 1) map[String(values[row][0])] = String(values[row][1]);
+  let schemaUpgradeRow = 0;
   if (!map.format) {
     meta.getRange(2, 1, 5, 2).setValues([
       ['format', TRACE_FORMAT], ['syncVersion', SYNC_VERSION], ['schemaVersion', SCHEMA_VERSION],
       ['checkpoint', 0], ['createdAt', new Date().toISOString()],
     ]);
-  } else if (map.format !== TRACE_FORMAT || Number(map.syncVersion) !== SYNC_VERSION || Number(map.schemaVersion) !== SCHEMA_VERSION) {
+  } else if (map.format !== TRACE_FORMAT || Number(map.syncVersion) !== SYNC_VERSION || Number(map.schemaVersion) > SCHEMA_VERSION) {
     throw new Error('This spreadsheet contains an incompatible Trace dataset.');
+  } else if (Number(map.schemaVersion) < SCHEMA_VERSION) {
+    for (let row = 1; row < values.length; row += 1) {
+      if (String(values[row][0]) === 'schemaVersion') schemaUpgradeRow = row + 1;
+    }
   }
   Object.keys(ENTITY_FIELDS).forEach(function(type) { ensureEntitySheet_(spreadsheet, type); });
+  if (schemaUpgradeRow) meta.getRange(schemaUpgradeRow, 2).setValue(SCHEMA_VERSION);
   return spreadsheet;
 }
 
@@ -139,7 +148,7 @@ function validateRecord_(record) {
 }
 
 function requiredField_(type, field) {
-  const optional = ['icon', 'colorRef', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'sourceRoutineId', 'trackableId'];
+  const optional = ['icon', 'colorRef', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'sourceRoutineId', 'trackableId', 'trackableVersion', 'quickLogTimingMode', 'behavior'];
   return optional.indexOf(field) < 0;
 }
 
@@ -149,8 +158,11 @@ function ensureSheet_(spreadsheet, name, headers) {
   let sheet = spreadsheet.getSheetByName(name);
   if (!sheet) sheet = spreadsheet.insertSheet(name);
   if (sheet.getLastRow() === 0) { sheet.getRange(1, 1, 1, headers.length).setValues([headers]); sheet.setFrozenRows(1); }
-  const actual = sheet.getRange(1, 1, 1, headers.length).getValues()[0].map(String);
-  if (JSON.stringify(actual) !== JSON.stringify(headers)) throw new Error('The ' + name + ' tab has incompatible headers.');
+  const actualWidth = Math.max(sheet.getLastColumn(), 1);
+  const actual = sheet.getRange(1, 1, 1, actualWidth).getValues()[0].map(String);
+  if (JSON.stringify(actual) === JSON.stringify(headers.slice(0, actual.length)) && actual.length < headers.length) {
+    sheet.getRange(1, actual.length + 1, 1, headers.length - actual.length).setValues([headers.slice(actual.length)]);
+  } else if (JSON.stringify(actual) !== JSON.stringify(headers)) throw new Error('The ' + name + ' tab has incompatible headers.');
   return sheet;
 }
 
@@ -162,6 +174,10 @@ function recordToRow_(record) {
 function rowToRecord_(type, row) {
   const payload = {};
   ENTITY_FIELDS[type].forEach(function(field, index) { const value = row[COMMON_HEADERS.length + index]; if (value !== '') payload[field] = JSON.parse(String(value)); });
+  if (type === 'trackables' && !payload.recordSemantics) {
+    payload.recordSemantics = payload.behavior === 'quick_log' ? 'occurrence' : 'daily_value';
+    payload.quickLogEnabled = payload.behavior === 'quick_log';
+  }
   return { format: TRACE_FORMAT, syncVersion: SYNC_VERSION, schemaVersion: SCHEMA_VERSION, entityType: type,
     id: String(row[0]), revision: Number(row[1]), remoteRevision: Number(row[2]), createdAt: String(row[3]),
     updatedAt: String(row[4]), deletedAt: row[5] === '' ? null : String(row[5]),

@@ -19,7 +19,7 @@ const roles: readonly { value: DataRole; label: string }[] = [
   { value: 'outcome', label: 'Outcome' }, { value: 'other', label: 'Other' },
 ]
 
-function Loading() { return <section className="screen"><p className="save-status">Loading events…</p></section> }
+function Loading() { return <section className="screen"><p className="save-status">Loading Quick Log…</p></section> }
 
 export function QuickLogScreen() {
   const [searchParams] = useSearchParams()
@@ -31,17 +31,17 @@ export function QuickLogScreen() {
   const results = useMemo(() => (library?.active ?? []).filter(({ definition }) => `${definition.name} ${definition.description ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())), [library, query])
   if (!library) return <Loading />
   return <section className="screen event-picker">
-    <header className="screen__heading compact-heading"><Link className="back-link" to="/">← Home</Link><p className="eyebrow">Quick Log</p><h1>What happened?</h1><p className="screen__description">Choose an event type, then save it in a few taps.</p></header>
-    {recent.length > 0 && <section className="event-section"><div className="section-heading"><h2>Recent</h2><span>Your latest event types</span></div><div className="event-choice-grid">{recent.map((item) => <EventChoice key={item.definition.id} item={item} historyDate={historyDate} />)}</div></section>}
-    <section className="event-section"><div className="section-heading"><h2>All event types</h2><Link to="/events/manage">Manage</Link></div><label className="search-field"><span className="sr-only">Search event types</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" /></label>
-      <div className="event-choice-grid">{results.map((item) => <EventChoice key={item.definition.id} item={item} historyDate={historyDate} />)}</div>{results.length === 0 && <p className="empty-copy">No matching event types.</p>}
+    <header className="screen__heading compact-heading"><Link className="back-link" to="/">← Home</Link><p className="eyebrow">Quick Log</p><h1>What happened?</h1><p className="screen__description">Choose a Quick Log Trackable, then save it in a few taps.</p></header>
+    {recent.length > 0 && <section className="event-section"><div className="section-heading"><h2>Recent</h2><span>Your latest Trackables</span></div><div className="event-choice-grid">{recent.map((item) => <EventChoice key={item.definition.id} item={item} historyDate={historyDate} />)}</div></section>}
+    <section className="event-section"><div className="section-heading"><h2>Quick Log Trackables</h2><Link to="/trackables/manage">Manage</Link></div><label className="search-field"><span className="sr-only">Search Quick Log Trackables</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Trackables" /></label>
+      <div className="event-choice-grid">{results.map((item) => <EventChoice key={item.definition.id} item={item} historyDate={historyDate} />)}</div>{results.length === 0 && <p className="empty-copy">No matching Quick Log Trackables.</p>}
     </section>
-    <Link className="secondary-button event-create-path" to="/events/manage/new">+ Create Event Type</Link>
+    <Link className="secondary-button event-create-path" to="/trackables/custom">+ Create Trackable</Link>
   </section>
 }
 
 function EventChoice({ item, historyDate }: { item: EventDefinitionDetails; historyDate?: string }) {
-  return <Link className="event-choice" to={`/events/log/${item.definition.id}${historyDate ? `?date=${historyDate}` : ''}`}><span aria-hidden="true">{iconGlyph(item.definition.icon)}</span><div><strong>{item.definition.name}</strong><small>{timingLabels[item.definition.timingMode]}</small></div><b aria-hidden="true">→</b></Link>
+  return <Link className="event-choice" to={`/quick-log/${item.definition.id}${historyDate ? `?date=${historyDate}` : ''}`}><span aria-hidden="true">{iconGlyph(item.definition.icon)}</span><div><strong>{item.definition.name}</strong><small>{timingLabels[item.definition.timingMode]}</small></div><b aria-hidden="true">→</b></Link>
 }
 
 export function LogEventScreen() {
@@ -73,9 +73,9 @@ export function LogEventScreen() {
       setDetails(item)
       if (item.definition.timingMode === 'duration') setOccurrence('duration')
     }
-    void load().catch((caught) => setError(caught instanceof Error ? caught.message : 'Could not load this event type.'))
+    void load().catch((caught) => setError(caught instanceof Error ? caught.message : 'Could not load this Quick Log Trackable.'))
   }, [eventDefinitionId, recordId])
-  if (!details) return error ? <section className="screen"><p className="form-error">{error}</p><Link to="/events">Back to events</Link></section> : <Loading />
+  if (!details) return error ? <section className="screen"><p className="form-error">{error}</p><Link to="/quick-log">Back to Quick Log</Link></section> : <Loading />
   function saveAnswer(trackableId: string, answer: EventAnswerDraft) { setAnswers((current) => new Map(current).set(trackableId, answer)) }
   async function submit(event: FormEvent) {
     if (!details) return
@@ -85,23 +85,23 @@ export function LogEventScreen() {
       const draft = { eventDefinitionId: details.definition.id, timing: { occurrence, start: endpointDraftFromInput(start), ...(occurrence === 'duration' && !ongoing ? { end: endpointDraftFromInput(endInput) } : {}), ongoing: occurrence === 'duration' && ongoing, timezone: currentTimeZone() }, answers: [...answers.values()] }
       const result = recordId ? await eventEngine.updateEvent(recordId, draft) : await eventEngine.logEvent(draft)
       navigate(recordId || searchParams.get('date') ? `/history?date=${result.record.localDate}` : '/', { replace: true, state: { loggedEventId: result.record.id } })
-    } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this event.') } finally { setBusy(false) }
+    } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this Quick Log entry.') } finally { setBusy(false) }
   }
-  return <section className="screen log-event-screen"><header className="event-log-header"><Link className="back-link" to={recordId ? `/history?date=${start.localDate}` : '/events'}>← {recordId ? 'History' : 'Events'}</Link><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><p className="eyebrow">{recordId ? 'Edit historical event' : 'Log event'}</p><h1>{details.definition.name}</h1></div></div></header>
+  return <section className="screen log-event-screen"><header className="event-log-header"><Link className="back-link" to={recordId ? `/history?date=${start.localDate}` : '/quick-log'}>← {recordId ? 'History' : 'Quick Log'}</Link><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><p className="eyebrow">{recordId ? 'Edit Quick Log entry' : 'Quick Log'}</p><h1>{details.definition.name}</h1></div></div></header>
     <form className="event-log-form" onSubmit={submit}>
       <section className="event-timing-card"><h2>When?</h2>
-        {details.definition.timingMode === 'either' && <fieldset className="occurrence-choice"><legend>Event shape</legend><div><button type="button" aria-pressed={occurrence === 'point'} onClick={() => setOccurrence('point')}>Point</button><button type="button" aria-pressed={occurrence === 'duration'} onClick={() => setOccurrence('duration')}>Duration</button></div></fieldset>}
+        {details.definition.timingMode === 'either' && <fieldset className="occurrence-choice"><legend>Entry shape</legend><div><button type="button" aria-pressed={occurrence === 'point'} onClick={() => setOccurrence('point')}>Point</button><button type="button" aria-pressed={occurrence === 'duration'} onClick={() => setOccurrence('duration')}>Duration</button></div></fieldset>}
         {occurrence === 'point'
           ? <PointTimingInput value={start} onChange={setStart} dayOnly={details.definition.timingMode === 'dayOnly'} />
           : <DurationTimingInput start={start} end={end} endsSameDay={endsSameDay} ongoing={ongoing} onStartChange={(next) => { setStart(next); if (end.localDate < next.localDate) setEnd({ ...end, localDate: next.localDate }) }} onEndChange={setEnd} onEndsSameDayChange={setEndsSameDay} onOngoingChange={setOngoing} />}
       </section>
       {details.fields.length > 0 && <section className="event-fields"><div className="section-heading"><h2>Details</h2><span>Optional unless you choose to answer</span></div>{details.fields.map((field) => {
-        const saved = answers.get(field.trackable.id); const observation = saved ? localObservation(field.trackable.id, field.field.trackableVersion, saved.answer) : undefined
+        const saved = answers.get(field.trackable.id); const observation = saved ? localObservation(field.trackable.id, field.field.fieldTrackableVersion, saved.answer) : undefined
         const selections = (saved?.selectedOptionIds ?? []).map((optionId) => localSelection(field.trackable.id, optionId))
         const item: RoutineItem = { ...field.field, routineId: 'event-form', target: { kind: 'trackable', trackableId: field.trackable.id }, section: undefined, frequency: 'every_day', trendTrackingMode: 'none', eventReminderBehavior: 'never' }
         return <article className="question-card" key={field.field.id}><div className="question-card__heading"><span aria-hidden="true">{iconGlyph(field.trackable.icon)}</span><div><h3 id={`event-field-${field.field.id}`}>{field.version.name}</h3>{field.version.description && <p>{field.version.description}</p>}</div></div><QuestionInput question={{ item, trackable: field.trackable, version: field.version, options: field.options, category: field.category }} observation={observation} selections={selections} onSave={(next) => saveAnswer(field.trackable.id, { trackableId: field.trackable.id, answer: next.answer, selectedOptionIds: next.selectedOptionIds })} /></article>
       })}</section>}
-      {details.fields.length === 0 && <p className="precision-note">This event type has no extra fields, so it is ready to save now. You can add Trackables from Manage event types.</p>}
+      {details.fields.length === 0 && <p className="precision-note">This Trackable has no extra details, so it is ready to save now.</p>}
       {error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button finish-button" disabled={busy}>{busy ? 'Saving…' : recordId ? 'Save Changes' : `Save ${details.definition.name}`}</button>
     </form>
   </section>
@@ -138,11 +138,11 @@ function localSelection(trackableId: string, optionId: string): ObservationOptio
 
 export function ManageEventsScreen() {
   const [library, setLibrary] = useState<EventLibrary | null>(null); const [error, setError] = useState('')
-  const load = () => void eventEngine.getLibrary().then(setLibrary).catch((caught) => setError(caught instanceof Error ? caught.message : 'Could not load event types.'))
+  const load = () => void eventEngine.getLibrary().then(setLibrary).catch((caught) => setError(caught instanceof Error ? caught.message : 'Could not load Quick Log Trackables.'))
   useEffect(load, [])
-  async function toggle(id: string, active: boolean) { try { await eventEngine.setDefinitionActive(id, active); load() } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update event type.') } }
+  async function toggle(id: string, active: boolean) { try { await eventEngine.setDefinitionActive(id, active); load() } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update Trackable.') } }
   if (!library) return <Loading />
-  return <section className="screen manage-events"><header className="screen__heading compact-heading"><Link className="back-link" to="/events">← Quick Log</Link><p className="eyebrow">Settings</p><h1>Event Types</h1><p className="screen__description">Shape the quick-log choices around what matters to you.</p></header><Link className="primary-button button-link" to="/events/manage/new">+ Create Event Type</Link>
+  return <section className="screen manage-events"><header className="screen__heading compact-heading"><Link className="back-link" to="/quick-log">← Quick Log</Link><p className="eyebrow">Trackables</p><h1>Quick Log Trackables</h1><p className="screen__description">Configure timing and optional structured details.</p></header><Link className="primary-button button-link" to="/trackables/custom">+ Create Trackable</Link>
     {error && <p className="form-error">{error}</p>}<div className="event-manage-list">{library.active.map((item) => <EventManageCard key={item.definition.id} item={item} active action={() => void toggle(item.definition.id, false)} />)}</div>
     {library.archived.length > 0 && <section className="event-section"><div className="section-heading"><h2>Archived</h2></div><div className="event-manage-list">{library.archived.map((item) => <EventManageCard key={item.definition.id} item={item} active={false} action={() => void toggle(item.definition.id, true)} />)}</div></section>}
   </section>
@@ -156,14 +156,14 @@ export function EventEditorScreen() {
   if (!library || !draft) return error ? <section className="screen"><p className="form-error">{error}</p></section> : <Loading />
   function addField(id: string) { if (!draft || draft.trackableIds.includes(id)) return; setDraft({ ...draft, trackableIds: [...draft.trackableIds, id] }) }
   function moveField(index: number, direction: -1 | 1) { if (!draft) return; const next = [...draft.trackableIds]; const swap = index + direction; if (swap < 0 || swap >= next.length) return; [next[index], next[swap]] = [next[swap], next[index]]; setDraft({ ...draft, trackableIds: next }) }
-  async function submit(event: FormEvent) { event.preventDefault(); const submitted = draft; if (!submitted) return; setBusy(true); setError(''); try { if (details) await eventEngine.updateDefinition(details.definition.id, submitted); else await eventEngine.createDefinition(submitted); navigate('/events/manage') } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this event type.') } finally { setBusy(false) } }
+  async function submit(event: FormEvent) { event.preventDefault(); const submitted = draft; if (!submitted) return; setBusy(true); setError(''); try { if (details) await eventEngine.updateDefinition(details.definition.id, submitted); else await eventEngine.createDefinition(submitted); navigate('/trackables') } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this Quick Log Trackable.') } finally { setBusy(false) } }
   const available = library.availableTrackables.filter((item) => !draft.trackableIds.includes(item.trackable.id))
-  return <section className="screen event-editor"><header className="screen__heading compact-heading"><Link className="back-link" to="/events/manage">← Event Types</Link><p className="eyebrow">{details ? 'Edit' : 'Create'}</p><h1>{details ? details.definition.name : 'Create Event Type'}</h1></header><form className="trackable-form trackable-editor-form" onSubmit={submit}>
+  return <section className="screen event-editor"><header className="screen__heading compact-heading"><Link className="back-link" to="/trackables/manage">← Trackables</Link><p className="eyebrow">Quick Log details</p><h1>{details ? details.definition.name : 'Create Quick Log Trackable'}</h1></header><form className="trackable-form trackable-editor-form" onSubmit={submit}>
     <label className="form-field"><span>Name</span><input required maxLength={100} autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Physical therapy" /></label><label className="form-field"><span>Description <small>optional</small></span><textarea rows={2} value={draft.description ?? ''} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
     <div className="form-row"><label className="form-field"><span>Category</span><select value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>{library.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="form-field"><span>Timing</span><select value={draft.timingMode} onChange={(event) => setDraft({ ...draft, timingMode: event.target.value as EventTimingMode })}>{Object.entries(timingLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
     <div className="form-row"><label className="form-field"><span>Data role</span><select value={draft.dataRole} onChange={(event) => setDraft({ ...draft, dataRole: event.target.value as DataRole })}>{roles.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label className="form-field"><span>Icon</span><select value={draft.icon?.type === 'library' ? draft.icon.value : 'sparkle'} onChange={(event) => setDraft({ ...draft, icon: { type: 'library', value: event.target.value } })}>{builtInIcons.map((item) => <option key={item.id} value={item.id}>{item.glyph} {item.label}</option>)}</select></label></div>
-    <fieldset className="event-field-editor"><legend>Event fields</legend><p>Add existing active Trackables as optional questions. Removing one here never deletes the Trackable.</p>{draft.trackableIds.length === 0 && <p className="empty-copy">No extra fields yet.</p>}<ol>{draft.trackableIds.map((id, index) => { const item = library.availableTrackables.find((entry) => entry.trackable.id === id); if (!item) return null; return <li key={id}><span>{iconGlyph(item.trackable.icon)}</span><strong>{item.version.name}</strong><div><button type="button" aria-label={`Move ${item.version.name} up`} disabled={index === 0} onClick={() => moveField(index, -1)}>↑</button><button type="button" aria-label={`Move ${item.version.name} down`} disabled={index === draft.trackableIds.length - 1} onClick={() => moveField(index, 1)}>↓</button><button type="button" className="text-button text-button--danger" onClick={() => setDraft({ ...draft, trackableIds: draft.trackableIds.filter((itemId) => itemId !== id) })}>Remove</button></div></li> })}</ol>{available.length > 0 ? <label className="form-field"><span>Add a Trackable</span><select value="" onChange={(event) => addField(event.target.value)}><option value="">Choose a Trackable…</option>{available.map((item) => <option key={item.trackable.id} value={item.trackable.id}>{item.version.name}</option>)}</select></label> : <p className="precision-note">Create or reactivate Trackables to add more fields.</p>}</fieldset>
-    {error && <p className="form-error" role="alert">{error}</p>}<div className="editor-actions"><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : details ? 'Save Changes' : 'Create Event Type'}</button><Link className="secondary-button" to="/events/manage">Cancel</Link></div>
+    <fieldset className="event-field-editor"><legend>Structured details</legend><p>Add existing active Trackables as optional questions. Removing one here never deletes the Trackable.</p>{draft.trackableIds.length === 0 && <p className="empty-copy">No extra details yet.</p>}<ol>{draft.trackableIds.map((id, index) => { const item = library.availableTrackables.find((entry) => entry.trackable.id === id); if (!item) return null; return <li key={id}><span>{iconGlyph(item.trackable.icon)}</span><strong>{item.version.name}</strong><div><button type="button" aria-label={`Move ${item.version.name} up`} disabled={index === 0} onClick={() => moveField(index, -1)}>↑</button><button type="button" aria-label={`Move ${item.version.name} down`} disabled={index === draft.trackableIds.length - 1} onClick={() => moveField(index, 1)}>↓</button><button type="button" className="text-button text-button--danger" onClick={() => setDraft({ ...draft, trackableIds: draft.trackableIds.filter((itemId) => itemId !== id) })}>Remove</button></div></li> })}</ol>{available.length > 0 ? <label className="form-field"><span>Add a detail Trackable</span><select value="" onChange={(event) => addField(event.target.value)}><option value="">Choose a Trackable…</option>{available.map((item) => <option key={item.trackable.id} value={item.trackable.id}>{item.version.name}</option>)}</select></label> : <p className="precision-note">Create or reactivate Trackables to add more details.</p>}</fieldset>
+    {error && <p className="form-error" role="alert">{error}</p>}<div className="editor-actions"><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : details ? 'Save Changes' : 'Create Trackable'}</button><Link className="secondary-button" to="/trackables/manage">Cancel</Link></div>
   </form></section>
 }
 
@@ -174,7 +174,7 @@ export function TodayEvents({ localDate }: { localDate: string }) {
   if (!events.length) return null
   const visible = expanded ? events : events.slice(0, 3)
   const additionalCount = events.length - visible.length
-  return <div className="today-events"><strong>Events</strong><ul>{visible.map(({ record, definition }) => {
+  return <div className="today-events"><strong>Quick Logs</strong><ul>{visible.map(({ record, definition }) => {
     const timing = homeEventTiming(record)
     return <li key={record.id}><Link to={homeEventEditPath(record.id)} aria-label={`Open ${definition.name}`}><span className="today-event__icon emoji-icon" aria-hidden="true">{iconGlyph(definition.icon)}</span><span className="today-event__name">{definition.name}</span>{timing ? <small className="today-event__timing">· {timing}</small> : null}</Link></li>
   })}</ul>{additionalCount > 0 ? <button type="button" className="today-events__more" aria-expanded={expanded} onClick={() => setExpanded(true)}>+{additionalCount}</button> : expanded && events.length > 3 ? <button type="button" className="today-events__more" aria-expanded="true" onClick={() => setExpanded(false)}>Show Fewer</button> : null}</div>

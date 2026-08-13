@@ -123,7 +123,7 @@ describe('GoogleSheetsAppsScriptSyncProvider', () => {
 
   it('validates production metadata and parses incremental pull records', async () => {
     const fetchImplementation = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { syncVersion: 1, schemaVersion: 1, checkpoint: 1, sheetName: 'Trace Backup', sheetId: 'sheet-1' } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { syncVersion: 1, schemaVersion: 2, checkpoint: 1, sheetName: 'Trace Backup', sheetId: 'sheet-1' } }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: { checkpoint: 1, records: [productionRecord] } }))
     const provider = new GoogleSheetsAppsScriptSyncProvider({ endpointUrl: endpoint, fetchImplementation })
     await expect(provider.healthCheck()).resolves.toMatchObject({ available: true, sheetName: 'Trace Backup', checkpoint: 1 })
@@ -138,7 +138,7 @@ describe('GoogleSheetsAppsScriptSyncProvider', () => {
     const provider = new GoogleSheetsAppsScriptSyncProvider({ endpointUrl: endpoint, fetchImplementation })
     await expect(provider.pushBatch([productionRecord])).resolves.toMatchObject({ checkpoint: 1, accepted: [productionRecord] })
     const body = JSON.parse(String(fetchImplementation.mock.calls[0][1]?.body))
-    expect(body).toMatchObject({ action: 'pushBatch', syncVersion: 1, schemaVersion: 1, records: [productionRecord] })
+    expect(body).toMatchObject({ action: 'pushBatch', syncVersion: 1, schemaVersion: 2, records: [productionRecord] })
     await expect(provider.pushBatch([productionRecord])).rejects.toThrow(/incompatible Trace sync format/i)
   })
 

@@ -109,7 +109,7 @@ export function TrendsScreen() {
         {summary?.kind === 'numeric' && summary.points.length > 0 ? <>
           <section className="trend-stat-grid" aria-label={`${summary.name} summary`}>
             <article><span>Most recent</span><strong>{summary.latest?.display}</strong><small>{summary.latest ? dateLabel(summary.latest.localDate) : ''}</small></article>
-            <article><span>Recorded</span><strong>{summary.count}</strong><small>observations</small></article>
+            <article><span>Recorded</span><strong>{summary.count}</strong><small>{summary.unit === 'entries' ? 'entries' : 'observations'}</small></article>
             <article><span>Average</span><strong>{summary.average === null ? '—' : `${formatTrendNumber(summary.average)}${summary.unit ? ` ${summary.unit}` : ''}`}</strong><small>in this range</small></article>
             <article><span>Range</span><strong>{summary.min === null ? '—' : `${formatTrendNumber(summary.min)}–${formatTrendNumber(summary.max!)}`}</strong><small>{summary.unit ?? 'recorded values'}</small></article>
           </section>

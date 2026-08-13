@@ -22,6 +22,9 @@ export type DataRole =
 
 export type ValueDirection = 'better' | 'worse' | 'neutral'
 export type EventTimingMode = 'point' | 'duration' | 'either' | 'dayOnly'
+export type TrackableRecordSemantics = 'daily_value' | 'occurrence'
+/** Schema-v2 correction input only. Active code uses TrackableRecordSemantics. */
+export type TrackableBehavior = 'daily' | 'quick_log'
 export type TimePrecision = 'exact' | 'timeOfDay' | 'day' | 'unknown'
 export type TimeOfDayBucket =
   | 'overnight'
@@ -32,7 +35,7 @@ export type TimeOfDayBucket =
   | 'evening'
   | 'night'
 export type EventOccurrenceKind = 'point' | 'duration'
-export type RecordKind = 'routine' | 'event' | 'momentary'
+export type RecordKind = 'routine' | 'quick_log' | 'event' | 'momentary'
 export type RecordStatus = 'draft' | 'completed'
 export type RecordSource =
   | 'app'

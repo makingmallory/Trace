@@ -8,7 +8,7 @@ import {
 import { bucketForHour } from '../../domain/events/eventTiming.ts'
 
 export const TRACE_DATABASE_NAME = 'trace-local-data'
-export const TRACE_DATABASE_VERSION = 2
+export const TRACE_DATABASE_VERSION = 3
 
 type Migration = (database: IDBDatabase, transaction: IDBTransaction) => void
 
@@ -65,6 +65,11 @@ const migrations: Readonly<Record<number, Migration>> = {
         cursor.continue()
       })
     })
+  },
+  3: (database) => {
+    for (const collection of repositoryCollections) {
+      if (!database.objectStoreNames.contains(collection)) database.createObjectStore(collection, { keyPath: 'id' })
+    }
   },
 }
 

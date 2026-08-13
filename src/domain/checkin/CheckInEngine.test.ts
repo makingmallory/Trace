@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { InMemoryDataRepository } from '../../data/local/InMemoryDataRepository.ts'
-import type { Category, InputType, Trackable, TrackableOption, TrackableVersion } from '../models/index.ts'
-import { CheckInEngine } from './CheckInEngine.ts'
+import type { Category, InputType, TrackableOption, TrackableRecordSemantics, TrackableVersion } from '../models/index.ts'
+import { CheckInEngine, OccurrenceConflictError } from './CheckInEngine.ts'
 
 const timestamp = '2026-08-10T21:00:00.000Z'
 
@@ -13,8 +13,8 @@ async function setup() {
   const category: Category = { id: 'category', name: 'Custom', sortOrder: 0, active: true, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
   await repository.save('categories', category)
 
-  async function addTrackable(trackableId: string, name: string, inputType: InputType, options: readonly string[] = []) {
-    const trackable: Trackable = { id: trackableId, categoryId: category.id, active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'other', createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+  async function addTrackable(trackableId: string, name: string, inputType: InputType, options: readonly string[] = [], recordSemantics: TrackableRecordSemantics = 'daily_value', quickLogEnabled = false) {
+    const trackable = { id: trackableId, categoryId: category.id, active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'other' as const, recordSemantics, quickLogEnabled, ...(quickLogEnabled ? { quickLogTimingMode: 'either' as const } : {}), createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
     const version: TrackableVersion = { id: `${trackableId}:v1`, trackableId, version: 1, name, inputType, ...(inputType === 'scale' ? { scaleMin: 0, scaleMax: 5, scaleStep: 1 } : {}), valueDirection: 'neutral', configuration: {}, retiredAt: null, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
     const savedOptions: TrackableOption[] = options.map((label, sortOrder) => ({ id: `${trackableId}:option-${sortOrder}:v1`, optionId: `${trackableId}:option-${sortOrder}`, trackableId, trackableVersion: 1, storedValue: label.toLowerCase(), label, sortOrder, active: true, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }))
     await repository.save('trackables', trackable); await repository.save('trackableVersions', version); await repository.saveMany('trackableOptions', savedOptions)
@@ -24,6 +24,9 @@ async function setup() {
   await addTrackable('symptom', 'Symptom present', 'boolean')
   await addTrackable('locations', 'Locations', 'multi_select', ['Left', 'Right'])
   await addTrackable('choice', 'Choice source', 'single_choice', ['First', 'Second', 'Third'])
+  await addTrackable('acne', 'Acne', 'boolean')
+  await addTrackable('pilates', 'Pilates', 'boolean', [], 'occurrence', true)
+  await addTrackable('migraine', 'Migraine', 'boolean', [], 'occurrence', true)
   return { engine, repository, setNow(value: string) { now = new Date(value) } }
 }
 
@@ -46,6 +49,57 @@ describe('CheckInEngine routine configuration', () => {
 })
 
 describe('CheckInEngine daily records', () => {
+  it('keeps Pilates in its routine position, prefills repeated Quick Logs, avoids duplicates, and lists a Quick-Log-only item once', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('pilates')
+    const entry = (id: string, trackableId: string) => ({ id, recordKind: 'quick_log' as const, trackableId, eventTimingKind: 'point' as const, localDate: '2026-08-10', startTimePrecision: 'day' as const, startTime: null, startTimeOfDay: null, endLocalDate: null, endTimePrecision: null, endTime: null, endTimeOfDay: null, ongoing: false, timezone: null, status: 'completed' as const, source: 'app' as const, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 })
+    await repository.saveMany('logRecords', [entry('pilates-entry', 'pilates'), entry('migraine-1', 'migraine'), entry('migraine-2', 'migraine')])
+    const snapshot = await engine.getOrCreateToday('2026-08-10', 'America/Chicago')
+    expect(snapshot.observations.find((item) => item.trackableId === 'pilates')?.answer).toEqual({ state: 'answered', value: { kind: 'boolean', value: true } })
+    expect(snapshot.quickLogSummaries.pilates).toBe(1)
+    expect(snapshot.loggedToday).toEqual([expect.objectContaining({ count: 2, version: expect.objectContaining({ name: 'Migraine' }) })])
+    expect(snapshot.questions.map((item) => item.trackable.id)).toEqual(['pilates'])
+    await engine.complete(snapshot.record.id)
+    expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'pilates' && !item.deletedAt)).toHaveLength(1)
+    expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'migraine' && !item.deletedAt)).toHaveLength(2)
+    await repository.save('logRecords', entry('pilates-entry-2', 'pilates'))
+    const repeated = await engine.getOrCreateToday('2026-08-10', 'America/Chicago')
+    expect(repeated.quickLogSummaries.pilates).toBe(2)
+    expect(repeated.observations.find((item) => item.trackableId === 'pilates')?.answer).toEqual({ state: 'answered', value: { kind: 'boolean', value: true } })
+    await engine.complete(repeated.record.id)
+    expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'pilates' && !item.deletedAt)).toHaveLength(2)
+  })
+
+  it('defaults an unlogged occurrence to unpersisted No, persists it only on completion, and creates one date-only Yes', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('pilates')
+    let snapshot = await engine.getOrCreateToday('2026-08-10', 'America/Chicago')
+    expect(snapshot.observations.find((item) => item.trackableId === 'pilates')?.answer).toEqual({ state: 'answered', value: { kind: 'boolean', value: false } })
+    expect(await repository.getAll('trackableDailyAssertions')).toEqual([])
+    snapshot = await engine.saveAnswer(snapshot.record.id, 'pilates', { answer: { state: 'answered', value: { kind: 'boolean', value: false } } })
+    expect(await repository.getAll('trackableDailyAssertions')).toEqual([])
+    await engine.complete(snapshot.record.id)
+    expect(await repository.getAll('trackableDailyAssertions')).toEqual([expect.objectContaining({ trackableId: 'pilates', status: 'did_not_occur', deletedAt: null })])
+    snapshot = await engine.saveAnswer(snapshot.record.id, 'pilates', { answer: { state: 'answered', value: { kind: 'boolean', value: true } } })
+    const occurrence = (await repository.getAll('logRecords')).find((item) => item.trackableId === 'pilates')!
+    expect(occurrence).toMatchObject({ startTimePrecision: 'day', startTime: null, source: 'nightly_backfill' })
+    expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'pilates' && !item.deletedAt)).toHaveLength(1)
+    await expect(engine.saveAnswer(snapshot.record.id, 'pilates', { answer: { state: 'answered', value: { kind: 'boolean', value: false } } })).rejects.toBeInstanceOf(OccurrenceConflictError)
+    snapshot = await engine.resolveQuickLogNo(snapshot.record.id, 'pilates')
+    expect((await repository.getById('logRecords', occurrence.id))?.deletedAt).not.toBeNull()
+    expect(await repository.getAll('trackableDailyAssertions')).toEqual([expect.objectContaining({ trackableId: 'pilates', status: 'did_not_occur', deletedAt: null })])
+    expect(snapshot.observations.find((item) => item.trackableId === 'pilates')?.answer).toEqual({ state: 'answered', value: { kind: 'boolean', value: false } })
+  })
+
+  it('keeps a Daily Value canonical and separate from Quick Log eligibility', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('acne')
+    const snapshot = await engine.getOrCreateToday('2026-08-10', 'America/Chicago')
+    await engine.saveAnswer(snapshot.record.id, 'acne', { answer: { state: 'answered', value: { kind: 'boolean', value: true } } })
+    await engine.saveAnswer(snapshot.record.id, 'acne', { answer: { state: 'answered', value: { kind: 'boolean', value: false } } })
+    expect((await repository.getAll('observations')).filter((item) => item.trackableId === 'acne' && !item.deletedAt)).toHaveLength(1)
+    expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'acne' && !item.deletedAt)).toHaveLength(0)
+  })
   it('autosaves and resumes a zero answer, warns but does not block expected missing, completes, and edits the same record', async () => {
     const { engine } = await setup()
     const score = await engine.addTrackable('score')

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import type { CheckInSnapshot, RoutineQuestion, SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
+import { OccurrenceConflictError, type CheckInSnapshot, type RoutineQuestion, type SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
 import { QuestionInput } from './QuestionInput.tsx'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
@@ -45,6 +45,10 @@ export function CheckInScreen() {
       if (editingCompleted) setHasCompletedEdits(true)
       flash(editingCompleted ? 'Changes saved locally' : 'Saved locally')
     } catch (reason) {
+      if (reason instanceof OccurrenceConflictError && window.confirm(`${reason.trackableName} was already logged today. Remove the existing ${reason.recordIds.length === 1 ? 'entry' : 'entries'} and save No?`)) {
+        try { setSnapshot(await checkInEngine.resolveQuickLogNo(snapshot.record.id, trackableId)); flash('Existing entry removed and No saved'); return }
+        catch (conflictReason) { setError(conflictReason instanceof Error ? conflictReason.message : 'Could not resolve this conflict.'); return }
+      }
       setError(reason instanceof Error ? reason.message : 'Could not save this answer.')
     } finally {
       setSaving(false)
@@ -97,11 +101,14 @@ export function CheckInScreen() {
     </div>
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
     <form className="checkin-form" onSubmit={(event) => { event.preventDefault(); void finish() }}>
+      <div className="section-heading"><h2>Usual Questions</h2></div>
       {groups.map(([category, questions]) => <section className="checkin-category" key={category}><h2>{category}</h2><div className="question-stack">{questions.map((question) => {
         const observation = snapshot.observations.find((item) => item.trackableId === question.trackable.id)
         const selections = observation ? snapshot.selections.filter((item) => item.observationId === observation.id) : []
-        return <article className="question-card" key={question.item.id}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><div><h3 id={`question-${question.item.id}`}>{question.version.name}</h3>{question.version.description ? <p>{question.version.description}</p> : null}</div>{question.item.completionBehavior === 'expected' ? <small>Usual</small> : null}</div><QuestionInput question={question} observation={observation} selections={selections} disabled={saving || completionSaving} onSave={(answer) => void save(question.trackable.id, answer)} /></article>
+        const quickLogCount = snapshot.quickLogSummaries[question.trackable.id]
+        return <article className="question-card" key={question.item.id}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><div><h3 id={`question-${question.item.id}`}>{question.version.name}</h3>{question.version.description ? <p>{question.version.description}</p> : null}{quickLogCount ? <p>{quickLogCount} logged today</p> : null}</div>{question.item.completionBehavior === 'expected' ? <small>Usual</small> : null}</div><QuestionInput question={question} observation={observation} selections={selections} disabled={saving || completionSaving} onSave={(answer) => void save(question.trackable.id, answer)} /></article>
       })}</div></section>)}
+      {snapshot.loggedToday.length ? <section className="checkin-category"><h2>Logged Today</h2><p className="screen__description">For review only—nothing else to answer.</p><div className="question-stack">{snapshot.loggedToday.map((item) => <Link className="question-card" key={item.trackable.id} to={`/history/quick-log/${encodeURIComponent(item.recordId)}/edit`}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(item.trackable.icon)}</span><div><h3>{item.version.name}</h3><p>{item.timing ? item.timing.replace(/\b\w/g, (letter) => letter.toUpperCase()) : `${item.count} ${item.count === 1 ? 'entry' : 'entries'}`}</p></div></div></Link>)}</div></section> : null}
       {warning.length > 0 ? <div className="completion-warning" role="alert"><h2>Finish with unanswered questions?</h2><p>You left {warning.length} usual {warning.length === 1 ? 'question' : 'questions'} unanswered: {warning.join(', ')}.</p><p>That’s okay—unanswered stays unknown.</p><div><button type="button" className="secondary-button" onClick={() => setWarning([])}>Keep Checking In</button><button type="button" className="primary-button" onClick={() => void finish(true)}>Finish Anyway</button></div></div> : null}
       <button type="submit" className={`primary-button finish-button${completed && !hasCompletedEdits && !completionSaving ? ' finish-button--complete' : ''}`} disabled={saving || completionSaving || (completed && !hasCompletedEdits)}>{primaryLabel}</button>
     </form>

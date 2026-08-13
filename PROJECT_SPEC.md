@@ -1,6 +1,26 @@
 # Personal Health & Pattern Tracker
 ## Master Product + Architecture Specification
 
+## Unified Trackable architecture amendment (schema v2)
+
+This amendment supersedes every later section that describes Trackables and Event Types as separate active product concepts. Those passages remain only as historical context for schema-v1 restore compatibility.
+
+- A **Trackable** is the only user-facing tracking definition.
+- Trackables have independent **record semantics** and **entry surfaces**. These must never be modeled as one mutually exclusive Daily/Quick Log choice.
+- `recordSemantics = daily_value` means one canonical value for a calendar day. `recordSemantics = occurrence` means zero, one, or many occurrence records per day.
+- `quickLogEnabled` is an optional entry capability for Occurrence Trackables. Quick Log Trackables may own optional, version-pinned `TrackableField` details and timing configuration.
+- Nightly Check-In participation is represented only by configured `RoutineItem` membership. A Trackable may be Nightly-only, Quick-Log-only, or available through both surfaces.
+- The user-facing action is **Quick Log**. “Event Type,” “Create Event Type,” “Manage Events,” and “Log Event” are legacy schema terms, not active UI concepts.
+- A Quick Log occurrence implies day-level Yes. A `TrackableDailyAssertion(status = did_not_occur)` stores explicit No. Neither means missing; absence never implies No.
+- Nightly Check-In is a review/completion surface. A routine Occurrence Trackable always remains in its configured position. Existing occurrences prefill Yes without creating duplicates; no occurrence defaults the UI to No; nightly Yes creates one date-only occurrence only when none exists; nightly No creates an assertion and requires conflict resolution before soft-deleting existing occurrences.
+- A default Nightly No is presentation state only. Opening, autosaving, or abandoning the draft does not persist it; successful Check-In completion materializes the explicit `did_not_occur` assertion. Missing and explicit No remain distinct.
+- **Logged Today** lists same-day Quick Logs that are not already routine questions and never becomes required questionnaire content.
+- `EventDefinition`, `EventField`, and `EventDailyAssertion` stores are retained read-only as schema-v1 migration inputs. Active data uses Trackable, TrackableVersion, TrackableField, LogRecord(`recordKind = quick_log`), and TrackableDailyAssertion.
+- Schema-v1 JSON backups and Google Sheets are upgraded through deterministic, transactional, idempotent migration. Stable record IDs, revisions, timestamps, timing precision, tombstones, relationships, icons, categories, routines, fields, and historical version references are preserved.
+- Duplicate reconciliation is automatic only for identical stable IDs or one exact normalized name + category + boolean-compatible Trackable. Fuzzy names and incompatible answer formats remain separate to avoid data loss.
+
+Implementation details and upgrade limitations are documented in `docs/unified-trackable-migration.md`.
+
 **Version:** 0.1  
 **Status:** Pre-development source of truth  
 **Date:** August 10, 2026  

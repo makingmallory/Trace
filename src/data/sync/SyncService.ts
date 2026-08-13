@@ -10,6 +10,7 @@ import {
   type SyncRecord,
   type SyncedCollection,
 } from './SyncProtocol.ts'
+import { migrateLegacyEvents } from '../migrations/unifyTrackables.ts'
 
 export const SYNC_METADATA_ID = 'sync.primary'
 export const DEFAULT_SYNC_BATCH_SIZE = 200
@@ -117,6 +118,7 @@ export class SyncService {
       for (const [collection, entities] of remoteWrites) writes.push({ collection, entities } as RepositoryWrite)
       writes.push({ collection: 'syncMetadata', entities: [metadata] })
       await this.repository.saveTransaction(writes)
+      await migrateLegacyEvents(this.repository)
 
       const pendingRecords: SyncRecord[] = []
       for (const collection of syncedCollections) {

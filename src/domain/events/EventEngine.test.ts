@@ -45,6 +45,17 @@ describe('EventEngine definitions', () => {
     await events.setDefinitionActive(created.definition.id, true)
     expect((await events.getLibrary()).active.some((item) => item.definition.id === created.definition.id)).toBe(true)
   })
+
+  it('lists only Occurrence Trackables with Quick Log enabled', async () => {
+    const repository = new InMemoryDataRepository(); const { trackables, events } = await setup(repository)
+    const nightlyOnly = await trackables.createTrackable({ ...draft('Nightly occurrence', 'boolean'), recordSemantics: 'occurrence', quickLogEnabled: false })
+    const bothSurfaces = await trackables.createTrackable({ ...draft('Both surfaces', 'boolean'), recordSemantics: 'occurrence', quickLogEnabled: true, quickLogTimingMode: 'point' })
+    const daily = await trackables.createTrackable({ ...draft('Acne', 'boolean'), recordSemantics: 'daily_value', quickLogEnabled: false })
+    const ids = (await events.getLibrary()).active.map((item) => item.definition.id)
+    expect(ids).toContain(bothSurfaces.trackable.id)
+    expect(ids).not.toContain(nightlyOnly.trackable.id)
+    expect(ids).not.toContain(daily.trackable.id)
+  })
 })
 
 describe('EventEngine logging', () => {
@@ -55,7 +66,7 @@ describe('EventEngine logging', () => {
     const second = await events.logEvent({ eventDefinitionId: 'preset.event.medication-taken', timing, answers: [] })
     expect(first.record.id).not.toBe(second.record.id)
     expect(first.record.startTime).not.toBeNull()
-    expect((await repository.getAll('logRecords')).filter((item) => item.eventDefinitionId === 'preset.event.medication-taken')).toHaveLength(2)
+    expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'preset.event.medication-taken')).toHaveLength(2)
   })
 
   it.each([
@@ -122,7 +133,7 @@ describe('EventEngine logging', () => {
     const logged = await events.logEvent({ eventDefinitionId: 'preset.event.travel', timing: { occurrence: 'duration', start: { localDate: '2026-08-01', precision: 'day' }, end: { localDate: '2026-08-03', precision: 'day' }, timezone: null }, answers: [] })
     const updated = await events.updateEvent(logged.record.id, { eventDefinitionId: 'preset.event.travel', timing: { occurrence: 'duration', start: { localDate: '2026-07-31', precision: 'timeOfDay', timeOfDay: 'evening' }, end: { localDate: '2026-08-02', precision: 'exact', localTime: '09:17' }, timezone: 'America/Chicago' }, answers: [] })
     expect(updated.record).toMatchObject({ id: logged.record.id, localDate: '2026-07-31', startTimePrecision: 'timeOfDay', startTimeOfDay: 'evening', endLocalDate: '2026-08-02', endTimePrecision: 'exact', revision: 2 })
-    expect((await repository.getAll('logRecords')).filter((item) => item.recordKind === 'event')).toHaveLength(1)
+    expect((await repository.getAll('logRecords')).filter((item) => item.recordKind === 'quick_log')).toHaveLength(1)
   })
 })
 
@@ -140,8 +151,8 @@ describe('event IndexedDB persistence', () => {
     firstRepository.close()
 
     const reopened = new IndexedDbDataRepository(name)
-    expect(await reopened.getById('eventDefinitions', definition.definition.id)).toMatchObject({ name: 'Round trip' })
-    expect((await reopened.getAll('eventFields')).some((item) => item.eventDefinitionId === definition.definition.id)).toBe(true)
+    expect(await reopened.getById('trackables', definition.definition.id)).toMatchObject({ recordSemantics: 'occurrence', quickLogEnabled: true })
+    expect((await reopened.getAll('trackableFields')).some((item) => item.ownerTrackableId === definition.definition.id)).toBe(true)
     expect(await reopened.getById('logRecords', logged.record.id)).toMatchObject({ localDate: '2026-08-11', startTime: null })
     expect((await reopened.getAll('observations')).some((item) => item.logRecordId === logged.record.id)).toBe(true)
     expect((await reopened.getAll('observationSelections')).some((item) => item.optionId === choice.options[0].optionId)).toBe(true)

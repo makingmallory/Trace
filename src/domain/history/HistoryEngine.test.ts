@@ -225,8 +225,8 @@ describe('History search and metric projection', () => {
   it('projects Event Definition occurrence counts separately from Trackable values', () => {
     const data = fixture()
     expect(eventMetricChoices(data).map((item) => item.name)).toEqual(['Migraine', 'Travel'])
-    expect(projectEventCalendar(data, 'migraine', '2026-08-11').get('2026-08-10')).toEqual({ localDate: '2026-08-10', display: '2 events', level: 1 })
-    expect(['2026-08-01', '2026-08-02', '2026-08-03'].map((date) => projectEventCalendar(data, 'travel', '2026-08-11').get(date)?.display)).toEqual(['1 event', '1 event', '1 event'])
+    expect(projectEventCalendar(data, 'migraine', '2026-08-11').get('2026-08-10')).toEqual({ localDate: '2026-08-10', display: '2 entries', level: 1 })
+    expect(['2026-08-01', '2026-08-02', '2026-08-03'].map((date) => projectEventCalendar(data, 'travel', '2026-08-11').get(date)?.display)).toEqual(['1 entry', '1 entry', '1 entry'])
     expect(projectEventCalendar(data, 'missing', '2026-08-11').size).toBe(0)
   })
 
@@ -237,13 +237,13 @@ describe('History search and metric projection', () => {
       trackables: [...base.trackables, { id: 'migraine-trackable', categoryId: 'health', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'symptom', ...sync }],
       trackableVersions: [...base.trackableVersions, { id: 'migraine-trackable-v1', trackableId: 'migraine-trackable', version: 1, name: 'Migraine', inputType: 'scale', scaleMin: 0, scaleMax: 5, scaleStep: 1, valueDirection: 'worse', configuration: {}, retiredAt: null, ...sync }],
     }
-    expect(projectCalendarMetric(data, 'event:migraine', '2026-08-11').get('2026-08-10')?.display).toBe('2 events')
+    expect(projectCalendarMetric(data, 'event:migraine', '2026-08-11').get('2026-08-10')?.display).toBe('2 entries')
     expect(projectCalendarMetric(data, 'trackable:migraine-trackable', '2026-08-11').size).toBe(0)
-    expect(projectCalendarMetric(data, 'event:travel', '2026-08-11').get('2026-08-02')?.display).toBe('1 event')
-    expect(projectCalendarMetric(data, 'event:migraine', '2026-08-11').get('2026-08-10')?.display).toBe('2 events')
+    expect(projectCalendarMetric(data, 'event:travel', '2026-08-11').get('2026-08-02')?.display).toBe('1 entry')
+    expect(projectCalendarMetric(data, 'event:migraine', '2026-08-11').get('2026-08-10')?.display).toBe('2 entries')
     expect(calendarMetricOptions(data).filter((option) => option.name === 'Migraine')).toEqual([
-      { identity: 'event:migraine', name: 'Migraine', kind: 'Event' },
-      { identity: 'trackable:migraine-trackable', name: 'Migraine', kind: 'Trackable' },
+      { identity: 'trackable:migraine-trackable', name: 'Migraine', kind: 'Daily Value' },
+      { identity: 'event:migraine', name: 'Migraine', kind: 'Occurrence' },
     ])
   })
 
@@ -257,7 +257,7 @@ describe('History search and metric projection', () => {
     const projection = projectEventCalendar({ ...base, logRecords: [...base.logRecords, ...additions] }, 'migraine', '2026-08-11', true)
     expect(projection.get('2026-08-04')?.level).toBe(0.25)
     expect(projection.get('2026-08-05')?.level).toBeCloseTo(0.5714, 4)
-    expect(projection.get('2026-08-06')).toMatchObject({ display: '8 events', level: 1 })
+    expect(projection.get('2026-08-06')).toMatchObject({ display: '8 entries', level: 1 })
   })
 
   it('handles equal, empty, and single-occurrence Event heatmap ranges sensibly', () => {

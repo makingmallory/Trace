@@ -7,6 +7,7 @@ import { TrackableEditor } from './TrackableEditor.tsx'
 import { trackableEngine } from './trackableEngine.ts'
 import { filterPresetGroups, inputTypes, isPresetAlreadyActive } from './trackableUi.ts'
 import { ActionIcon } from '../../components/ActionIcons.tsx'
+import { isQuickLogEligible, recordSemanticsFor } from '../../domain/trackables/trackableSemantics.ts'
 
 function useTrackableLibrary() {
   const [library, setLibrary] = useState<TrackableLibrary | null>(null)
@@ -31,8 +32,8 @@ function typeLabel(details: TrackableDetails): string {
 function TrackableCard({ details, onArchive }: { details: TrackableDetails; onArchive: () => void }) {
   return <article className="collection-card">
     <span className="collection-card__icon emoji-icon" aria-hidden="true">{iconGlyph(details.trackable.icon)}</span>
-    <div className="collection-card__copy"><h3>{details.version.name}</h3><p>{typeLabel(details)}{details.version.unit ? ` · ${details.version.unit}` : ''}</p></div>
-    <details className="overflow-menu"><summary aria-label={`Actions for ${details.version.name}`}>•••</summary><div className="overflow-menu__panel"><Link to={`/trackables/edit/${details.trackable.id}`}>Edit</Link><button type="button" onClick={onArchive}>Archive</button></div></details>
+    <div className="collection-card__copy"><h3>{details.version.name}</h3><p>{recordSemanticsFor(details.trackable) === 'occurrence' ? `Occurrence${isQuickLogEligible(details.trackable) ? ' · Quick Log' : ''}` : `Daily Value · ${typeLabel(details)}`}{details.version.unit ? ` · ${details.version.unit}` : ''}</p></div>
+    <details className="overflow-menu"><summary aria-label={`Actions for ${details.version.name}`}>•••</summary><div className="overflow-menu__panel"><Link to={`/trackables/edit/${details.trackable.id}`}>Edit</Link>{isQuickLogEligible(details.trackable) ? <Link to={`/trackables/quick-log/${details.trackable.id}`}>Configure Details</Link> : null}<button type="button" onClick={onArchive}>Archive</button></div></details>
   </article>
 }
 

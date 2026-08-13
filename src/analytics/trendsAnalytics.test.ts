@@ -50,6 +50,22 @@ describe('minimal trend analytics', () => {
     expect(result?.kind === 'numeric' ? result.count : -1).toBe(1)
   })
 
+  it('counts Quick Log occurrences once each and does not invent zero-count days', () => {
+    const quickData = data({
+      trackables: [trackable({ recordSemantics: 'occurrence', quickLogEnabled: true, quickLogTimingMode: 'either' })],
+      trackableVersions: [version({ name: 'Pilates', inputType: 'boolean' })],
+      logRecords: [
+        record('one', '2026-08-01', { recordKind: 'quick_log', trackableId: 'metric', trackableVersion: 1 }),
+        record('two', '2026-08-01', { recordKind: 'quick_log', trackableId: 'metric', trackableVersion: 1 }),
+        record('deleted', '2026-08-02', { recordKind: 'quick_log', trackableId: 'metric', trackableVersion: 1, deletedAt: '2026-08-03T00:00:00.000Z' }),
+      ],
+    })
+    const result = buildTrendSummary(quickData, 'metric', 'all', '2026-08-11')
+    expect(trendMetricOptions(quickData)).toEqual([{ trackableId: 'metric', name: 'Pilates', kind: 'numeric' }])
+    expect(result?.kind === 'numeric' ? result.points : []).toEqual([expect.objectContaining({ localDate: '2026-08-01', value: 2 })])
+    expect(result?.kind === 'numeric' ? result.count : -1).toBe(2)
+  })
+
   it('excludes deleted observations and observations belonging to deleted records', () => {
     const result = buildTrendSummary(data({
       logRecords: [record('kept', '2026-08-01'), record('deleted-record', '2026-08-02', { deletedAt: '2026-08-03T00:00:00.000Z' })],

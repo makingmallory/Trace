@@ -5,6 +5,7 @@ import type {
   Category, EventDefinition, IconReference, LogRecord, Observation, ObservationOptionSelection, Routine, RoutineItem, Settings,
   Trackable, TrackableOption, TrackableVersion,
 } from '../models/index.ts'
+import { isOccurrenceTrackable } from '../trackables/trackableSemantics.ts'
 
 export interface HistoryData {
   categories: readonly Category[]
@@ -107,7 +108,7 @@ export type CalendarMetricIdentity = `trackable:${string}` | `event:${string}`
 export interface CalendarMetricOption {
   identity: CalendarMetricIdentity
   name: string
-  kind: 'Trackable' | 'Event'
+  kind: 'Daily Value' | 'Occurrence'
 }
 
 export type HistoryAgendaRecord =
@@ -174,11 +175,30 @@ export function shiftLocalDate(localDate: string, days: number): string {
 }
 
 export function eventCoveredDates(record: LogRecord, today = currentLocalDate()): readonly string[] {
-  if (record.recordKind !== 'event' || record.eventTimingKind !== 'duration') return [record.localDate]
+  if (!isQuickLogRecord(record) || record.eventTimingKind !== 'duration') return [record.localDate]
   const end = record.ongoing ? today : record.endLocalDate ?? record.localDate
   if (end < record.localDate) return [record.localDate]
   const startValue = localDateNumber(record.localDate); const endValue = localDateNumber(end)
   return Array.from({ length: Math.floor((endValue - startValue) / 86_400_000) + 1 }, (_, index) => dateFromNumber(startValue + index * 86_400_000))
+}
+
+function isQuickLogRecord(record: LogRecord): boolean { return record.recordKind === 'quick_log' || record.recordKind === 'event' }
+
+function quickLogDefinitions(data: HistoryData): Map<string, EventDefinition> {
+  const definitions = new Map(data.eventDefinitions.map((item) => [item.id, item]))
+  for (const trackable of data.trackables.filter(isOccurrenceTrackable)) {
+    const version = data.trackableVersions.find((item) => item.trackableId === trackable.id && item.version === trackable.currentVersion)
+    if (version) definitions.set(trackable.id, { ...trackable, name: version.name, description: version.description,
+      timingMode: trackable.quickLogTimingMode ?? 'either', nightlyReminderDefault: 'never', treatmentFollowUpEnabled: false })
+  }
+  return definitions
+}
+
+function definitionForRecord(data: HistoryData, record: LogRecord, definitions = quickLogDefinitions(data)): EventDefinition | undefined {
+  const definition = definitions.get(record.trackableId ?? record.eventDefinitionId ?? '')
+  if (!definition || !record.trackableId || !record.trackableVersion) return definition
+  const version = data.trackableVersions.find((item) => item.trackableId === record.trackableId && item.version === record.trackableVersion)
+  return version ? { ...definition, name: version.name, description: version.description } : definition
 }
 
 function eventSortValue(record: LogRecord): number {
@@ -254,15 +274,15 @@ export function formatCheckInAgendaSummary(status: 'draft' | 'completed', answer
 
 export function buildCalendarSummaries(data: HistoryData, today = currentLocalDate()): ReadonlyMap<string, CalendarDaySummary> {
   const summaries = new Map<string, CalendarDaySummary>()
-  const definitions = new Map(data.eventDefinitions.map((item) => [item.id, item]))
+  const definitions = quickLogDefinitions(data)
   for (const record of activeRecords(data)) {
-    const coveredDates = record.recordKind === 'event' ? eventCoveredDates(record, today) : [record.localDate]
+    const coveredDates = isQuickLogRecord(record) ? eventCoveredDates(record, today) : [record.localDate]
     for (const localDate of coveredDates) {
       const current = summaries.get(localDate) ?? { localDate, checkInStatus: null, eventCount: 0, eventIcons: [] }
       if (record.recordKind === 'routine') current.checkInStatus = current.checkInStatus === 'completed' ? 'completed' : record.status
-      if (record.recordKind === 'event') {
+      if (isQuickLogRecord(record)) {
         current.eventCount += 1
-        const icon = record.eventDefinitionId ? definitions.get(record.eventDefinitionId)?.icon : undefined
+        const icon = definitions.get(record.trackableId ?? record.eventDefinitionId ?? '')?.icon
         if (icon && current.eventIcons.length < 2) current.eventIcons = [...current.eventIcons, icon]
       }
       summaries.set(localDate, current)
@@ -272,7 +292,7 @@ export function buildCalendarSummaries(data: HistoryData, today = currentLocalDa
 }
 
 export function buildDayDetail(data: HistoryData, localDate: string, today = currentLocalDate()): HistoryDayDetail {
-  const records = activeRecords(data).filter((record) => record.recordKind === 'event' ? eventCoveredDates(record, today).includes(localDate) : record.localDate === localDate)
+  const records = activeRecords(data).filter((record) => isQuickLogRecord(record) ? eventCoveredDates(record, today).includes(localDate) : record.localDate === localDate)
   const routineRecord = records.filter((record) => record.recordKind === 'routine').sort((a, b) => Number(b.status === 'completed') - Number(a.status === 'completed') || b.updatedAt.localeCompare(a.updatedAt))[0]
   let checkIn: HistoryDayDetail['checkIn'] = null
   if (routineRecord) {
@@ -288,9 +308,9 @@ export function buildDayDetail(data: HistoryData, localDate: string, today = cur
     }
     checkIn = { record: routineRecord, groups: [...grouped].map(([category, answers]) => ({ category, answers })) }
   }
-  const definitions = new Map(data.eventDefinitions.map((item) => [item.id, item]))
-  const events = records.filter((record) => record.recordKind === 'event').sort(compareHistoryEvents).flatMap((record): HistoryEventDetail[] => {
-    const definition = record.eventDefinitionId ? definitions.get(record.eventDefinitionId) : undefined
+  const definitions = quickLogDefinitions(data)
+  const events = records.filter(isQuickLogRecord).sort(compareHistoryEvents).flatMap((record): HistoryEventDetail[] => {
+    const definition = definitionForRecord(data, record, definitions)
     if (!definition) return []
     const fields = data.observations.filter((item) => item.logRecordId === record.id && !item.deletedAt).flatMap((item) => answerDetail(data, item) ?? [])
     return [{ record, definition, timing: formatEventTiming(record), fields }]
@@ -323,8 +343,8 @@ function searchableRecord(data: HistoryData, record: LogRecord): { identity: str
     const value = formatHistoryAnswer(data, observation)
     return version ? [`${version.name}: ${value}`, ...(category ? [category] : []), ...(trackable?.tags ?? [])] : []
   })
-  if (record.recordKind === 'event') {
-    const definition = data.eventDefinitions.find((item) => item.id === record.eventDefinitionId)
+  if (isQuickLogRecord(record)) {
+    const definition = definitionForRecord(data, record)
     if (!definition) return null
     const category = data.categories.find((item) => item.id === definition.categoryId)?.name ?? ''
     return { identity: definition.name, terms: [definition.name, definition.description, category, ...contexts].filter(Boolean).join(' '), context: contexts[0] ?? formatEventTiming(record), timing: formatEventTiming(record) }
@@ -347,15 +367,15 @@ export function searchHistory(data: HistoryData, query: string, today: string, f
   const parsed = parseHistoryQuery(query)
   const hasFilters = Boolean(filters.from || filters.to || (filters.recordType && filters.recordType !== 'all'))
   if (!parsed.term && !hasFilters) return { isLastOccurrence: parsed.last, normalizedQuery: '', totalMatches: 0, results: [] }
-  const orderedRecords = [...activeRecords(data)].sort((a, b) => b.localDate.localeCompare(a.localDate) || (a.recordKind === 'event' && b.recordKind === 'event' ? compareHistoryEvents(b, a) : b.updatedAt.localeCompare(a.updatedAt)))
+  const orderedRecords = [...activeRecords(data)].sort((a, b) => b.localDate.localeCompare(a.localDate) || (isQuickLogRecord(a) && isQuickLogRecord(b) ? compareHistoryEvents(b, a) : b.updatedAt.localeCompare(a.updatedAt)))
   const results = orderedRecords.flatMap((record): HistorySearchResult[] => {
     const indexed = searchableRecord(data, record)
-    const kind = record.recordKind === 'event' ? 'event' : record.recordKind === 'routine' ? 'check-in' : null
+    const kind = isQuickLogRecord(record) ? 'event' : record.recordKind === 'routine' ? 'check-in' : null
     if (!indexed || !kind || (parsed.term && !indexed.terms.toLowerCase().includes(parsed.term))) return []
     if (filters.from && record.localDate < filters.from) return []
     if (filters.to && record.localDate > filters.to) return []
     if (filters.recordType && filters.recordType !== 'all' && kind !== filters.recordType) return []
-    return [{ recordId: record.id, localDate: record.localDate, kind: record.recordKind === 'event' ? 'event' : 'check-in', identity: indexed.identity, context: indexed.context, timing: indexed.timing, daysAgo: daysBetween(record.localDate, today) }]
+    return [{ recordId: record.id, localDate: record.localDate, kind: isQuickLogRecord(record) ? 'event' : 'check-in', identity: indexed.identity, context: indexed.context, timing: indexed.timing, daysAgo: daysBetween(record.localDate, today) }]
   })
   return { isLastOccurrence: parsed.last, normalizedQuery: parsed.term, totalMatches: results.length, results: parsed.last ? results.slice(0, 1) : results }
 }
@@ -364,7 +384,7 @@ export function historySearchSuggestions(data: HistoryData, query: string, limit
   const term = query.trim().toLowerCase()
   if (!term) return []
   const labels = [
-    ...data.eventDefinitions.filter((item) => !item.deletedAt).map((item) => item.name),
+    ...[...quickLogDefinitions(data).values()].map((item) => item.name),
     ...data.trackableVersions.filter((item) => !item.deletedAt).map((item) => item.name),
     ...data.categories.filter((item) => !item.deletedAt).map((item) => item.name),
     ...data.trackables.filter((item) => !item.deletedAt).flatMap((item) => item.tags),
@@ -404,15 +424,15 @@ export function metricChoices(data: HistoryData): readonly MetricChoice[] {
 }
 
 export function eventMetricChoices(data: HistoryData): readonly EventMetricChoice[] {
-  return data.eventDefinitions.filter((definition) => definition.active && !definition.deletedAt)
+  return [...quickLogDefinitions(data).values()].filter((definition) => definition.active && !definition.deletedAt)
     .map((definition) => ({ eventDefinitionId: definition.id, name: definition.name }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function calendarMetricOptions(data: HistoryData): readonly CalendarMetricOption[] {
   return [
-    ...metricChoices(data).map((choice): CalendarMetricOption => ({ identity: `trackable:${choice.trackableId}`, name: choice.name, kind: 'Trackable' })),
-    ...eventMetricChoices(data).map((choice): CalendarMetricOption => ({ identity: `event:${choice.eventDefinitionId}`, name: choice.name, kind: 'Event' })),
+    ...metricChoices(data).filter((choice) => !isOccurrenceTrackable(data.trackables.find((item) => item.id === choice.trackableId)!)).map((choice): CalendarMetricOption => ({ identity: `trackable:${choice.trackableId}`, name: choice.name, kind: 'Daily Value' })),
+    ...eventMetricChoices(data).map((choice): CalendarMetricOption => ({ identity: `event:${choice.eventDefinitionId}`, name: choice.name, kind: 'Occurrence' })),
   ].sort((a, b) => a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind) || a.identity.localeCompare(b.identity))
 }
 
@@ -427,13 +447,13 @@ export function observedRangeLevel(value: number, observedValues: readonly numbe
 export function projectEventCalendar(data: HistoryData, eventDefinitionId: string, today = currentLocalDate(), heatmap = false): ReadonlyMap<string, MetricDayValue> {
   const counts = new Map<string, number>()
   for (const record of activeRecords(data)) {
-    if (record.recordKind !== 'event' || record.eventDefinitionId !== eventDefinitionId) continue
+    if (!isQuickLogRecord(record) || (record.trackableId ?? record.eventDefinitionId) !== eventDefinitionId) continue
     for (const localDate of eventCoveredDates(record, today)) counts.set(localDate, (counts.get(localDate) ?? 0) + 1)
   }
   const observedCounts = [...counts.values()]
   return new Map([...counts].map(([localDate, count]) => [localDate, {
     localDate,
-    display: `${count} ${count === 1 ? 'event' : 'events'}`,
+    display: `${count} ${count === 1 ? 'entry' : 'entries'}`,
     level: heatmap ? observedRangeLevel(count, observedCounts) : 1,
   }]))
 }

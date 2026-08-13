@@ -5,7 +5,9 @@ import { deserializeEntity, parseSyncRecord, serializeEntity, syncedCollections,
 const timestamps = { id: 'entity-1', createdAt: '2026-08-10T01:02:03.000Z', updatedAt: '2026-08-11T04:05:06.000Z', deletedAt: null, revision: 3, originDeviceId: 'device-1' }
 const payloads: Record<SyncedCollection, Record<string, unknown>> = {
   categories: { name: 'Category', sortOrder: 0, active: true },
-  trackables: { categoryId: 'cat', active: true, archivedAt: null, currentVersion: 2, tags: ['tag'], dataRole: 'measurement' },
+  trackables: { categoryId: 'cat', active: true, archivedAt: null, currentVersion: 2, tags: ['tag'], dataRole: 'measurement', recordSemantics: 'daily_value', quickLogEnabled: false },
+  trackableFields: { ownerTrackableId: 'quick', fieldTrackableId: 'track', fieldTrackableVersion: 2, sortOrder: 0, enabled: true, completionBehavior: 'optional' },
+  trackableDailyAssertions: { date: '2026-08-10', trackableId: 'quick', status: 'did_not_occur', recordedAt: '2026-08-11T03:00:00.000Z' },
   trackableVersions: { trackableId: 'track', version: 2, name: 'Metric', inputType: 'multiSelect', valueDirection: 'neutral', configuration: { emptyAllowed: true }, retiredAt: null },
   trackableOptions: { optionId: 'option-stable', trackableId: 'track', trackableVersion: 2, storedValue: 'zero', label: 'Zero', sortOrder: 0, active: true },
   routines: { name: 'Nightly', active: true, scheduleType: 'daily' },
@@ -59,5 +61,14 @@ describe('production sync protocol', () => {
     const valid = serializeEntity('categories', { ...timestamps, ...payloads.categories } as RepositoryCollectionMap['categories'])
     expect(() => parseSyncRecord({ ...valid, syncVersion: 2 })).toThrow(/incompatible/i)
     expect(() => parseSyncRecord({ ...valid, payload: {} })).toThrow(/missing name/i)
+  })
+
+  it('accepts the original schema-v2 Trackable payload so the correction migration can translate it', () => {
+    const current = serializeEntity('trackables', { ...timestamps, ...payloads.trackables } as RepositoryCollectionMap['trackables'])
+    const payload: Record<string, unknown> = { ...current.payload, behavior: 'quick_log' }
+    delete payload.recordSemantics
+    delete payload.quickLogEnabled
+    const legacy = { ...current, payload }
+    expect(parseSyncRecord(legacy).payload).toMatchObject({ behavior: 'quick_log' })
   })
 })

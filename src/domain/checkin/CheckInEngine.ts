@@ -13,9 +13,11 @@ import type {
   Trackable,
   TrackableOption,
   TrackableVersion,
+  TrackableDailyAssertion,
   TrendTrackingMode,
 } from '../models/index.ts'
 import { buildRuleAnswers, evaluateConditionalRule } from './conditionalRules.ts'
+import { isOccurrenceTrackable } from '../trackables/trackableSemantics.ts'
 
 export interface RoutineQuestion {
   item: RoutineItem
@@ -38,6 +40,18 @@ export interface CheckInSnapshot {
   visibleQuestions: readonly RoutineQuestion[]
   observations: readonly Observation[]
   selections: readonly ObservationOptionSelection[]
+  quickLogSummaries: Readonly<Record<string, number>>
+  loggedToday: readonly { trackable: Trackable; version: TrackableVersion; count: number; timing: string | null; recordId: string }[]
+}
+
+export class OccurrenceConflictError extends Error {
+  readonly trackableName: string
+  readonly recordIds: readonly string[]
+  constructor(trackableName: string, recordIds: readonly string[]) {
+    super(`${trackableName} was already logged today.`)
+    this.trackableName = trackableName
+    this.recordIds = recordIds
+  }
 }
 
 export interface SavedAnswer {
@@ -247,7 +261,22 @@ export class CheckInEngine {
   }
 
   private async snapshot(routine: Routine, record: LogRecord, questions: readonly RoutineQuestion[]): Promise<CheckInSnapshot> {
-    const observations = (await this.repository.getAll('observations')).filter((item) => item.logRecordId === record.id && !item.deletedAt)
+    const storedObservations = (await this.repository.getAll('observations')).filter((item) => item.logRecordId === record.id && !item.deletedAt)
+    const [allRecords, assertions] = await Promise.all([this.repository.getAll('logRecords'), this.repository.getAll('trackableDailyAssertions')])
+    const quickRecords = allRecords.filter((item) => item.recordKind === 'quick_log' && item.localDate === record.localDate && !item.deletedAt && item.trackableId)
+    const quickQuestions = questions.filter((question) => isOccurrenceTrackable(question.trackable))
+    const synthesized = quickQuestions.flatMap((question): Observation[] => {
+      const occurrences = quickRecords.filter((item) => item.trackableId === question.trackable.id)
+      const assertion = assertions.find((item) => item.trackableId === question.trackable.id && item.date === record.localDate && !item.deletedAt)
+      const value = occurrences.length > 0 || assertion?.status === 'occurred'
+      if (!occurrences.length && assertion?.status === 'unknown') return []
+      return [{ id: `occurrence-state:${record.id}:${question.trackable.id}`, logRecordId: record.id, trackableId: question.trackable.id,
+        trackableVersion: question.trackable.currentVersion, answer: { state: 'answered', value: { kind: 'boolean', value } },
+        createdAt: assertion?.createdAt ?? occurrences[0]?.createdAt ?? record.createdAt, updatedAt: assertion?.updatedAt ?? occurrences[0]?.updatedAt ?? record.updatedAt,
+        deletedAt: null, revision: 1 }]
+    })
+    const quickIds = new Set(quickQuestions.map((item) => item.trackable.id))
+    const observations = [...storedObservations.filter((item) => !quickIds.has(item.trackableId)), ...synthesized]
     const configuredIds = new Set(questions.map((question) => question.trackable.id))
     const recordedIds = new Set(observations.map((observation) => observation.trackableId))
     const [allDefinitions, routineItems] = await Promise.all([this.loadQuestionDefinitions(), this.repository.getAll('routineItems')])
@@ -274,7 +303,19 @@ export class CheckInEngine {
       }
     })
     const scheduled = historicallyAccurateQuestions.filter((question) => isScheduled(question.item, record.localDate))
-    return { routine, record, questions: scheduled, visibleQuestions: scheduled.filter((question) => evaluateConditionalRule(question.item.conditionalRule, answers)), observations, selections }
+    const routineIds = new Set(questions.map((question) => question.trackable.id))
+    const grouped = new Map<string, LogRecord[]>()
+    for (const item of quickRecords) grouped.set(item.trackableId!, [...(grouped.get(item.trackableId!) ?? []), item])
+    const loggedToday = [...grouped].flatMap(([trackableId, entries]) => {
+      if (routineIds.has(trackableId)) return []
+      const question = allDefinitions.find((item) => item.trackable.id === trackableId)
+      if (!question) return []
+      const first = entries[0]
+      const timing = entries.length === 1 && first.startTimePrecision === 'timeOfDay' ? first.startTimeOfDay?.replaceAll('_', ' ') ?? null : null
+      return [{ trackable: question.trackable, version: question.version, count: entries.length, timing, recordId: first.id }]
+    })
+    return { routine, record, questions: scheduled, visibleQuestions: scheduled.filter((question) => evaluateConditionalRule(question.item.conditionalRule, answers)), observations, selections,
+      quickLogSummaries: Object.fromEntries([...grouped].map(([id, entries]) => [id, entries.length])), loggedToday }
   }
 
   async saveAnswer(recordId: string, trackableId: string, saved: SavedAnswer): Promise<CheckInSnapshot> {
@@ -282,6 +323,7 @@ export class CheckInEngine {
     if (!record || record.recordKind !== 'routine' || !record.routineId || record.deletedAt) throw new Error('Check-In was not found.')
     const trackable = await this.repository.getById('trackables', trackableId)
     if (!trackable) throw new Error('Trackable was not found.')
+    if (isOccurrenceTrackable(trackable)) return this.saveOccurrenceAnswer(record, trackable, saved, false)
     const observations = await this.repository.getAll('observations')
     const existing = observations.find((item) => item.logRecordId === recordId && item.trackableId === trackableId && !item.deletedAt)
     const timestamp = this.timestamp()
@@ -309,6 +351,49 @@ export class CheckInEngine {
     return this.snapshot(configuration.routine!, updatedRecord, configuration.questions)
   }
 
+  async saveOccurrenceAnswer(record: LogRecord, trackable: Trackable, saved: SavedAnswer, removeExisting: boolean): Promise<CheckInSnapshot> {
+    if (saved.answer.state !== 'answered' || saved.answer.value.kind !== 'boolean') throw new Error('Occurrence routine questions use Yes or No.')
+    const timestamp = this.timestamp()
+    const records = (await this.repository.getAll('logRecords')).filter((item) => item.recordKind === 'quick_log' && item.trackableId === trackable.id && item.localDate === record.localDate && !item.deletedAt)
+    const assertions = await this.repository.getAll('trackableDailyAssertions')
+    const existingAssertion = assertions.find((item) => item.trackableId === trackable.id && item.date === record.localDate)
+    const writes: import('../../data/repository/DataRepository.ts').RepositoryWrite[] = []
+    if (saved.answer.value.value) {
+      if (records.length === 0) writes.push({ collection: 'logRecords', entities: [{
+        id: this.createId(), recordKind: 'quick_log', trackableId: trackable.id, trackableVersion: trackable.currentVersion, eventTimingKind: 'point', localDate: record.localDate,
+        startTimePrecision: 'day', startTime: null, startTimeOfDay: null, endLocalDate: null, endTimePrecision: null,
+        endTime: null, endTimeOfDay: null, ongoing: false, timezone: null, status: 'completed', source: 'nightly_backfill',
+        createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
+      }] })
+      if (existingAssertion && !existingAssertion.deletedAt) writes.push({ collection: 'trackableDailyAssertions', entities: [{ ...existingAssertion, deletedAt: timestamp, updatedAt: timestamp, revision: existingAssertion.revision + 1 }] })
+    } else {
+      if (records.length && !removeExisting) {
+        const version = (await this.repository.getAll('trackableVersions')).find((item) => item.trackableId === trackable.id && item.version === trackable.currentVersion)
+        throw new OccurrenceConflictError(version?.name ?? 'This item', records.map((item) => item.id))
+      }
+      if (records.length) writes.push({ collection: 'logRecords', entities: records.map((item) => ({ ...item, deletedAt: timestamp, updatedAt: timestamp, revision: item.revision + 1 })) })
+      const shouldPersistNo = record.status === 'completed' || records.length > 0 || Boolean(existingAssertion && !existingAssertion.deletedAt)
+      if (shouldPersistNo) {
+        const assertion: TrackableDailyAssertion = existingAssertion ? { ...existingAssertion, status: 'did_not_occur', deletedAt: null, recordedAt: timestamp, updatedAt: timestamp, revision: existingAssertion.revision + 1 } : {
+          id: this.createId(), date: record.localDate, trackableId: trackable.id, status: 'did_not_occur', sourceRoutineId: record.routineId,
+          recordedAt: timestamp, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
+        }
+        writes.push({ collection: 'trackableDailyAssertions', entities: [assertion] })
+      }
+    }
+    writes.push({ collection: 'logRecords', entities: [{ ...record, updatedAt: timestamp, revision: record.revision + 1 }] })
+    await this.repository.saveTransaction(writes)
+    const configuration = await this.getConfiguration()
+    return this.snapshot(configuration.routine!, { ...record, updatedAt: timestamp, revision: record.revision + 1 }, configuration.questions)
+  }
+
+  async resolveQuickLogNo(recordId: string, trackableId: string): Promise<CheckInSnapshot> {
+    const record = await this.repository.getById('logRecords', recordId)
+    const trackable = await this.repository.getById('trackables', trackableId)
+    if (!record || !trackable) throw new Error('Check-In question was not found.')
+    return this.saveOccurrenceAnswer(record, trackable, { answer: { state: 'answered', value: { kind: 'boolean', value: false } } }, true)
+  }
+
   async complete(recordId: string, confirmExpected = false): Promise<CompletionResult> {
     const record = await this.repository.getById('logRecords', recordId)
     if (!record || !record.routineId) throw new Error('Check-In was not found.')
@@ -325,7 +410,26 @@ export class CheckInEngine {
     if (record.status !== 'completed') {
       const timestamp = this.timestamp()
       const completedRecord: LogRecord = { ...record, status: 'completed', updatedAt: timestamp, revision: record.revision + 1 }
-      await this.repository.save('logRecords', completedRecord)
+      const [records, assertions] = await Promise.all([
+        this.repository.getAll('logRecords'), this.repository.getAll('trackableDailyAssertions'),
+      ])
+      const defaultNoAssertions = snapshot.visibleQuestions.filter((question) => {
+        if (!isOccurrenceTrackable(question.trackable)) return false
+        const observation = snapshot.observations.find((item) => item.trackableId === question.trackable.id)
+        const defaultsNo = observation?.answer.state === 'answered'
+          && observation.answer.value.kind === 'boolean'
+          && observation.answer.value.value === false
+        const hasOccurrence = records.some((item) => item.recordKind === 'quick_log' && item.trackableId === question.trackable.id && item.localDate === record.localDate && !item.deletedAt)
+        const hasAssertion = assertions.some((item) => item.trackableId === question.trackable.id && item.date === record.localDate && !item.deletedAt)
+        return defaultsNo && !hasOccurrence && !hasAssertion
+      }).map((question): TrackableDailyAssertion => ({
+        id: this.createId(), date: record.localDate, trackableId: question.trackable.id, status: 'did_not_occur', sourceRoutineId: record.routineId,
+        recordedAt: timestamp, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
+      }))
+      await this.repository.saveTransaction([
+        { collection: 'trackableDailyAssertions', entities: defaultNoAssertions },
+        { collection: 'logRecords', entities: [completedRecord] },
+      ])
       snapshot = await this.snapshot(routine, completedRecord, configuration.questions)
     }
     return { completed: true, expectedUnanswered, snapshot }

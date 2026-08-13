@@ -1,12 +1,14 @@
 import type { DataRepository } from '../../data/repository/DataRepository.ts'
+import { migrateLegacyEvents } from '../../data/migrations/unifyTrackables.ts'
 import { categoryPresets } from '../../presets/trackablePresets.ts'
 import { eventPresets } from '../../presets/eventPresets.ts'
 import { isSupportedIcon } from '../../presets/iconLibrary.ts'
 import type {
-  Category, DataRole, EventDefinition, EventField, EventTimingMode, IANATimeZone, IconReference,
+  Category, DataRole, EventDefinition, EventTimingMode, IANATimeZone, IconReference, TrackableField,
   LogRecord, Observation, ObservationAnswer, ObservationOptionSelection, RecordSource, TimeOfDayBucket, TimePrecision,
   Trackable, TrackableOption, TrackableVersion,
 } from '../models/index.ts'
+import { isQuickLogEligible } from '../trackables/trackableSemantics.ts'
 
 export interface EventDefinitionDraft {
   name: string
@@ -19,7 +21,7 @@ export interface EventDefinitionDraft {
 }
 
 export interface EventQuestion {
-  field: EventField
+  field: TrackableField
   trackable: Trackable
   version: TrackableVersion
   options: readonly TrackableOption[]
@@ -154,37 +156,50 @@ export class EventEngine {
         createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
       })))
     }
-    if ((await this.repository.getAll('eventDefinitions')).length > 0) return
+    await migrateLegacyEvents(this.repository)
+    const existing = await this.repository.getAll('trackables')
     const timestamp = this.timestamp()
-    await this.repository.saveMany('eventDefinitions', eventPresets.map((preset) => ({
-      id: preset.id, name: preset.name, description: preset.description, categoryId: preset.categoryId,
-      icon: preset.icon, timingMode: preset.timingMode, dataRole: preset.dataRole, active: true,
-      nightlyReminderDefault: 'never', treatmentFollowUpEnabled: false,
-      createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
-    })))
+    const missing = eventPresets.filter((preset) => !existing.some((item) => item.id === preset.id))
+    await this.repository.saveTransaction([
+      { collection: 'trackables', entities: missing.map((preset) => ({
+        id: preset.id, categoryId: preset.categoryId, active: true, archivedAt: null, currentVersion: 1,
+        tags: [], dataRole: preset.dataRole, recordSemantics: 'occurrence' as const, quickLogEnabled: true, quickLogTimingMode: preset.timingMode,
+        icon: preset.icon, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
+      })) },
+      { collection: 'trackableVersions', entities: missing.map((preset) => ({
+        id: `${preset.id}:v1`, trackableId: preset.id, version: 1, name: preset.name, description: preset.description,
+        inputType: 'boolean' as const, valueDirection: 'neutral' as const, configuration: {}, retiredAt: null,
+        createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
+      })) },
+    ])
   }
 
   async getLibrary(): Promise<EventLibrary> {
     await this.initialize()
-    const [categories, definitions, fields, trackables, versions, options] = await Promise.all([
-      this.repository.getAll('categories'), this.repository.getAll('eventDefinitions'), this.repository.getAll('eventFields'),
+    const [categories, fields, trackables, versions, options] = await Promise.all([
+      this.repository.getAll('categories'), this.repository.getAll('trackableFields'),
       this.repository.getAll('trackables'), this.repository.getAll('trackableVersions'), this.repository.getAll('trackableOptions'),
     ])
     const activeTrackables = trackables.filter((item) => item.active && !item.deletedAt).flatMap((trackable) => {
       const version = versions.find((item) => item.trackableId === trackable.id && item.version === trackable.currentVersion)
       return version ? [{ trackable, version }] : []
     })
-    const details = definitions.filter((item) => !item.deletedAt).map((definition) => ({
-      definition,
-      fields: fields.filter((field) => field.eventDefinitionId === definition.id && field.enabled && !field.deletedAt)
+    const details = trackables.filter((item) => isQuickLogEligible(item) && !item.deletedAt).flatMap((owner): EventDefinitionDetails[] => {
+      const ownerVersion = versions.find((item) => item.trackableId === owner.id && item.version === owner.currentVersion)
+      if (!ownerVersion) return []
+      const definition: EventDefinition = { ...owner, name: ownerVersion.name, description: ownerVersion.description,
+        timingMode: owner.quickLogTimingMode ?? 'either', nightlyReminderDefault: 'never', treatmentFollowUpEnabled: false }
+      return [{ definition,
+      fields: fields.filter((field) => field.ownerTrackableId === owner.id && field.enabled && !field.deletedAt)
         .sort((a, b) => a.sortOrder - b.sortOrder).flatMap((field) => {
-          const trackable = trackables.find((item) => item.id === field.trackableId)
-          const version = versions.find((item) => item.trackableId === field.trackableId && item.version === field.trackableVersion)
+          const trackable = trackables.find((item) => item.id === field.fieldTrackableId)
+          const version = versions.find((item) => item.trackableId === field.fieldTrackableId && item.version === field.fieldTrackableVersion)
           const category = trackable ? categories.find((item) => item.id === trackable.categoryId) : undefined
           return trackable && version && category ? [{ field, trackable, version, category,
             options: options.filter((item) => item.trackableId === trackable.id && item.trackableVersion === version.version && item.active && !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder) }] : []
         }),
-    }))
+      }]
+    })
     return {
       categories: [...categories].filter((item) => !item.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder),
       active: details.filter((item) => item.definition.active),
@@ -196,7 +211,7 @@ export class EventEngine {
   async getDetails(id: string): Promise<EventDefinitionDetails> {
     const library = await this.getLibrary()
     const details = [...library.active, ...library.archived].find((item) => item.definition.id === id)
-    if (!details) throw new EventValidationError(['Event type was not found.'])
+    if (!details) throw new EventValidationError(['Quick Log Trackable was not found.'])
     return details
   }
 
@@ -205,69 +220,80 @@ export class EventEngine {
     if (!draft.name.trim()) issues.push('Name is required.')
     if (!library.categories.some((item) => item.id === draft.categoryId)) issues.push('Choose a category.')
     if (!isSupportedIcon(draft.icon)) issues.push('Choose a built-in icon or a short emoji.')
-    if (new Set(draft.trackableIds).size !== draft.trackableIds.length) issues.push('Each Event Field may only be added once.')
+    if (new Set(draft.trackableIds).size !== draft.trackableIds.length) issues.push('Each detail field may only be added once.')
     const available = new Set(library.availableTrackables.map((item) => item.trackable.id))
-    if (draft.trackableIds.some((id) => !available.has(id))) issues.push('Event Fields must reference active Trackables.')
+    if (draft.trackableIds.some((id) => !available.has(id))) issues.push('Detail fields must reference active Trackables.')
     if (issues.length) throw new EventValidationError(issues)
   }
 
   async createDefinition(draft: EventDefinitionDraft): Promise<EventDefinitionDetails> {
     const library = await this.getLibrary(); this.validateDraft(draft, library)
     const timestamp = this.timestamp(); const id = this.createId()
-    const definition: EventDefinition = {
-      id, name: draft.name.trim(), description: draft.description?.trim() || undefined, categoryId: draft.categoryId,
-      icon: draft.icon, timingMode: draft.timingMode, dataRole: draft.dataRole, active: true,
-      nightlyReminderDefault: 'never', treatmentFollowUpEnabled: false,
+    const trackable: Trackable = {
+      id, categoryId: draft.categoryId, active: true, archivedAt: null, currentVersion: 1, tags: [],
+      icon: draft.icon, quickLogTimingMode: draft.timingMode, dataRole: draft.dataRole, recordSemantics: 'occurrence', quickLogEnabled: true,
       createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
     }
-    await this.repository.save('eventDefinitions', definition)
+    const version: TrackableVersion = { id: this.createId(), trackableId: id, version: 1, name: draft.name.trim(),
+      description: draft.description?.trim() || undefined, inputType: 'boolean', valueDirection: 'neutral', configuration: {}, retiredAt: null,
+      createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+    await this.repository.saveTransaction([{ collection: 'trackables', entities: [trackable] }, { collection: 'trackableVersions', entities: [version] }])
     await this.saveFields(id, draft.trackableIds, timestamp)
     return this.getDetails(id)
   }
 
   async updateDefinition(id: string, draft: EventDefinitionDraft): Promise<EventDefinitionDetails> {
     const library = await this.getLibrary(); this.validateDraft(draft, library)
-    const current = await this.repository.getById('eventDefinitions', id)
-    if (!current || current.deletedAt) throw new EventValidationError(['Event type was not found.'])
+    const current = await this.repository.getById('trackables', id)
+    if (!current || current.deletedAt || !isQuickLogEligible(current)) throw new EventValidationError(['Quick Log Trackable was not found.'])
+    const currentVersion = (await this.repository.getAll('trackableVersions')).find((item) => item.trackableId === id && item.version === current.currentVersion)!
     const timestamp = this.timestamp()
-    await this.repository.save('eventDefinitions', { ...current, name: draft.name.trim(), description: draft.description?.trim() || undefined,
-      categoryId: draft.categoryId, icon: draft.icon, timingMode: draft.timingMode, dataRole: draft.dataRole,
-      updatedAt: timestamp, revision: current.revision + 1 })
+    const nextVersion: TrackableVersion = { ...currentVersion, id: this.createId(), version: current.currentVersion + 1,
+      name: draft.name.trim(), description: draft.description?.trim() || undefined, retiredAt: null,
+      createdAt: timestamp, updatedAt: timestamp, revision: 1 }
+    await this.repository.saveTransaction([
+      { collection: 'trackables', entities: [{ ...current, categoryId: draft.categoryId, icon: draft.icon,
+        quickLogTimingMode: draft.timingMode, dataRole: draft.dataRole, currentVersion: nextVersion.version,
+        updatedAt: timestamp, revision: current.revision + 1 }] },
+      { collection: 'trackableVersions', entities: [{ ...currentVersion, retiredAt: timestamp, updatedAt: timestamp, revision: currentVersion.revision + 1 }, nextVersion] },
+    ])
     await this.saveFields(id, draft.trackableIds, timestamp)
     return this.getDetails(id)
   }
 
-  private async saveFields(eventDefinitionId: string, trackableIds: readonly string[], timestamp: string): Promise<void> {
-    const current = (await this.repository.getAll('eventFields')).filter((item) => item.eventDefinitionId === eventDefinitionId && !item.deletedAt)
+  private async saveFields(ownerTrackableId: string, trackableIds: readonly string[], timestamp: string): Promise<void> {
+    const current = (await this.repository.getAll('trackableFields')).filter((item) => item.ownerTrackableId === ownerTrackableId && !item.deletedAt)
     const trackables = await this.repository.getAll('trackables')
     const wanted = new Set(trackableIds)
-    await this.repository.saveMany('eventFields', current.filter((item) => !wanted.has(item.trackableId)).map((item) => ({
+    await this.repository.saveMany('trackableFields', current.filter((item) => !wanted.has(item.fieldTrackableId)).map((item) => ({
       ...item, enabled: false, updatedAt: timestamp, revision: item.revision + 1,
     })))
     for (const [sortOrder, trackableId] of trackableIds.entries()) {
       const trackable = trackables.find((item) => item.id === trackableId)!
-      const existing = current.find((item) => item.trackableId === trackableId)
-      await this.repository.save('eventFields', existing ? { ...existing, enabled: true, sortOrder, trackableVersion: trackable.currentVersion, updatedAt: timestamp, revision: existing.revision + 1 } : {
-        id: this.createId(), eventDefinitionId, trackableId, trackableVersion: trackable.currentVersion, sortOrder, enabled: true,
+      const existing = current.find((item) => item.fieldTrackableId === trackableId)
+      await this.repository.save('trackableFields', existing ? { ...existing, enabled: true, sortOrder, fieldTrackableVersion: trackable.currentVersion, updatedAt: timestamp, revision: existing.revision + 1 } : {
+        id: this.createId(), ownerTrackableId, fieldTrackableId: trackableId, fieldTrackableVersion: trackable.currentVersion, sortOrder, enabled: true,
         completionBehavior: 'optional', createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
       })
     }
   }
 
   async setDefinitionActive(id: string, active: boolean): Promise<void> {
-    const current = await this.repository.getById('eventDefinitions', id)
-    if (!current || current.deletedAt) throw new EventValidationError(['Event type was not found.'])
-    await this.repository.save('eventDefinitions', { ...current, active, updatedAt: this.timestamp(), revision: current.revision + 1 })
+    const current = await this.repository.getById('trackables', id)
+    if (!current || current.deletedAt || !isQuickLogEligible(current)) throw new EventValidationError(['Quick Log Trackable was not found.'])
+    const timestamp = this.timestamp()
+    await this.repository.save('trackables', { ...current, active, archivedAt: active ? null : timestamp, updatedAt: timestamp, revision: current.revision + 1 })
   }
 
   async logEvent(draft: LogEventDraft): Promise<LoggedEvent> {
     const details = await this.getDetails(draft.eventDefinitionId)
-    if (!details.definition.active) throw new EventValidationError(['Archived event types cannot be logged.'])
+    if (!details.definition.active) throw new EventValidationError(['Archived Trackables cannot be logged.'])
     validateEventAnswers(details, draft.answers)
     const timingFields = prepareEventTiming(details, draft.timing)
     const timestamp = this.timestamp()
+    const owner = await this.repository.getById('trackables', details.definition.id)
     const record: LogRecord = {
-      id: this.createId(), recordKind: 'event', eventDefinitionId: details.definition.id, ...timingFields,
+      id: this.createId(), recordKind: 'quick_log', trackableId: details.definition.id, trackableVersion: owner?.currentVersion ?? 1, ...timingFields,
       status: 'completed', source: draft.source ?? 'app', createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
     }
     const observations: Observation[] = []
@@ -275,7 +301,7 @@ export class EventEngine {
     for (const field of details.fields) {
       const saved = draft.answers.find((item) => item.trackableId === field.trackable.id) ?? { trackableId: field.trackable.id, answer: { state: 'unanswered' as const } }
       const observation: Observation = { id: this.createId(), logRecordId: record.id, trackableId: field.trackable.id,
-        trackableVersion: field.field.trackableVersion, answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+        trackableVersion: field.field.fieldTrackableVersion, answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
       observations.push(observation)
       if (saved.answer.state === 'answered' && saved.answer.value.kind === 'choice') {
         const validOptions = new Set(field.options.map((item) => item.optionId))
@@ -293,8 +319,9 @@ export class EventEngine {
 
   async getLoggedEvent(recordId: string): Promise<LoggedEvent & { details: EventDefinitionDetails }> {
     const record = await this.repository.getById('logRecords', recordId)
-    if (!record || record.recordKind !== 'event' || !record.eventDefinitionId || record.deletedAt) throw new EventValidationError(['Event was not found.'])
-    const details = await this.getDetails(record.eventDefinitionId)
+    const ownerId = record?.trackableId ?? record?.eventDefinitionId
+    if (!record || !['quick_log', 'event'].includes(record.recordKind) || !ownerId || record.deletedAt) throw new EventValidationError(['Quick Log entry was not found.'])
+    const details = await this.getDetails(ownerId)
     const observations = (await this.repository.getAll('observations')).filter((item) => item.logRecordId === record.id && !item.deletedAt)
     const ids = new Set(observations.map((item) => item.id))
     const selections = (await this.repository.getAll('observationSelections')).filter((item) => ids.has(item.observationId) && !item.deletedAt)
@@ -303,7 +330,7 @@ export class EventEngine {
 
   async updateEvent(recordId: string, draft: LogEventDraft): Promise<LoggedEvent> {
     const existing = await this.getLoggedEvent(recordId)
-    if (existing.record.eventDefinitionId !== draft.eventDefinitionId) throw new EventValidationError(['An event cannot change its event type.'])
+    if ((existing.record.trackableId ?? existing.record.eventDefinitionId) !== draft.eventDefinitionId) throw new EventValidationError(['A Quick Log entry cannot change its Trackable.'])
     validateEventAnswers(existing.details, draft.answers)
     const timingFields = prepareEventTiming(existing.details, draft.timing)
     const timestamp = this.timestamp()
@@ -318,7 +345,7 @@ export class EventEngine {
       const previous = existing.observations.find((item) => item.trackableId === field.trackable.id)
       const observation: Observation = previous
         ? { ...previous, answer: saved.answer, deletedAt: null, updatedAt: timestamp, revision: previous.revision + 1 }
-        : { id: this.createId(), logRecordId: record.id, trackableId: field.trackable.id, trackableVersion: field.field.trackableVersion, answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+        : { id: this.createId(), logRecordId: record.id, trackableId: field.trackable.id, trackableVersion: field.field.fieldTrackableVersion, answer: saved.answer, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
       observations.push(observation)
       await this.repository.save('observations', observation)
       const wanted = new Set(saved.answer.state === 'answered' && saved.answer.value.kind === 'choice' ? saved.selectedOptionIds ?? [] : [])
@@ -336,16 +363,16 @@ export class EventEngine {
 
   async getRecentDefinitions(limit = 4): Promise<readonly EventDefinitionDetails[]> {
     const library = await this.getLibrary()
-    const records = (await this.repository.getAll('logRecords')).filter((item) => item.recordKind === 'event' && !item.deletedAt)
+    const records = (await this.repository.getAll('logRecords')).filter((item) => ['quick_log', 'event'].includes(item.recordKind) && !item.deletedAt)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    const ids = [...new Set(records.map((item) => item.eventDefinitionId).filter((id): id is string => Boolean(id)))]
+    const ids = [...new Set(records.map((item) => item.trackableId ?? item.eventDefinitionId).filter((id): id is string => Boolean(id)))]
     return ids.slice(0, limit).flatMap((id) => library.active.find((item) => item.definition.id === id) ?? [])
   }
 
   async getEventsForDate(localDate: string): Promise<readonly { record: LogRecord; definition: EventDefinition }[]> {
     const library = await this.getLibrary(); const definitions = new Map(library.active.concat(library.archived).map((item) => [item.definition.id, item.definition]))
-    return (await this.repository.getAll('logRecords')).filter((item) => item.recordKind === 'event' && item.localDate === localDate && !item.deletedAt)
-      .flatMap((record) => { const definition = record.eventDefinitionId ? definitions.get(record.eventDefinitionId) : undefined; return definition ? [{ record, definition }] : [] })
+    return (await this.repository.getAll('logRecords')).filter((item) => ['quick_log', 'event'].includes(item.recordKind) && item.localDate === localDate && !item.deletedAt)
+      .flatMap((record) => { const definition = definitions.get(record.trackableId ?? record.eventDefinitionId ?? ''); return definition ? [{ record, definition }] : [] })
       .sort((a, b) => (a.record.startTime ?? '').localeCompare(b.record.startTime ?? ''))
   }
 }
