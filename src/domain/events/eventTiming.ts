@@ -9,10 +9,10 @@ export interface TimeOfDayDefinition {
 
 export const timeOfDayDefinitions: readonly TimeOfDayDefinition[] = [
   { value: 'overnight', label: 'Overnight', conceptualRange: '12–5 AM', icon: '🌌' },
-  { value: 'early_morning', label: 'Early morning', conceptualRange: '5–8 AM', icon: '🌅' },
+  { value: 'early_morning', label: 'Early Morning', conceptualRange: '5–8 AM', icon: '🌅' },
   { value: 'morning', label: 'Morning', conceptualRange: '8 AM–12 PM', icon: '☀️' },
-  { value: 'early_afternoon', label: 'Early afternoon', conceptualRange: '12–3 PM', icon: '🌤️' },
-  { value: 'late_afternoon', label: 'Late afternoon', conceptualRange: '3–6 PM', icon: '🌇' },
+  { value: 'early_afternoon', label: 'Early Afternoon', conceptualRange: '12–3 PM', icon: '🌤️' },
+  { value: 'late_afternoon', label: 'Late Afternoon', conceptualRange: '3–6 PM', icon: '🌇' },
   { value: 'evening', label: 'Evening', conceptualRange: '6–9 PM', icon: '🌆' },
   { value: 'night', label: 'Night', conceptualRange: '9 PM–12 AM', icon: '🌙' },
 ]

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LogRecord } from '../../domain/models/index.ts'
-import { homeEventTiming } from './homeEventSummary.ts'
+import { homeEventEditPath, homeEventTiming } from './homeEventSummary.ts'
 
 const record: LogRecord = {
   id: 'record', recordKind: 'event', eventDefinitionId: 'event', eventTimingKind: 'point', localDate: '2026-08-11',
@@ -16,7 +16,11 @@ describe('Home event timing presentation', () => {
   })
 
   it('keeps time-of-day and exact-time metadata', () => {
-    expect(homeEventTiming({ ...record, startTimePrecision: 'timeOfDay', startTimeOfDay: 'early_morning' })).toBe('Early morning')
+    expect(homeEventTiming({ ...record, startTimePrecision: 'timeOfDay', startTimeOfDay: 'early_morning' })).toBe('Early Morning')
     expect(homeEventTiming({ ...record, startTimePrecision: 'exact', startTime: new Date(2026, 7, 11, 8, 7).toISOString() })).toBe('8:07 AM')
+  })
+
+  it('routes a summary event to its stable record editor', () => {
+    expect(homeEventEditPath('record/with spaces')).toBe('/history/events/record%2Fwith%20spaces/edit')
   })
 })

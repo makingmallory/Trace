@@ -12,7 +12,7 @@ export async function shareTextFile(fileName: string, contents: string): Promise
     recursive: true,
   })
   await Share.share({
-    title: 'Export Trace data',
+    title: 'Export Trace Data',
     text: 'Trace portable backup',
     files: [written.uri],
     dialogTitle: 'Save or share Trace backup',

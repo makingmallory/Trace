@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { CheckInSnapshot, RoutineQuestion, SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
 import { QuestionInput } from './QuestionInput.tsx'
+import { iconGlyph } from '../../presets/iconLibrary.ts'
+import { shouldReturnHomeAfterCompletion } from './checkInNavigation.ts'
 
 export function CheckInScreen() {
+  const navigate = useNavigate()
   const { localDate = '' } = useParams()
   const historical = /^\d{4}-\d{2}-\d{2}$/.test(localDate)
   const [snapshot, setSnapshot] = useState<CheckInSnapshot | null>(null)
@@ -64,6 +67,7 @@ export function CheckInScreen() {
       setWarning([])
       setHasCompletedEdits(false)
       if (editingCompleted) flash('Changes saved')
+      if (shouldReturnHomeAfterCompletion(historical, editingCompleted, result.completed)) navigate('/', { replace: true })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not finish this Check-In.')
     } finally {
@@ -78,14 +82,14 @@ export function CheckInScreen() {
   const primaryLabel = completionSaving
     ? completed ? 'Saving changes…' : 'Finishing…'
     : completed
-      ? hasCompletedEdits ? 'Save changes' : '✓ Completed'
+      ? hasCompletedEdits ? 'Save Changes' : '✓ Completed'
       : 'Finish Check-In'
   const statusDetail = saving
     ? completed ? 'Saving changes…' : 'Saving locally…'
     : savedMessage
 
   return <section className="screen checkin-screen">
-    <header className="checkin-header"><div><Link className="back-link" to={historical ? `/history?date=${snapshot.record.localDate}` : '/'}>← {historical ? 'History' : 'Home'}</Link><p className="eyebrow">{historical ? 'Editing past date' : snapshot.record.localDate}</p><h1>Nightly Check-In</h1><p className="screen__description">{historical ? `Editing ${snapshot.record.localDate}. Changes stay attached to this original Check-In.` : completed ? 'Today is complete. You can still edit any answer below.' : 'One gentle scroll. Every answer saves to this device as you go.'}</p></div><Link className="manage-link" to="/settings/nightly-check-in">Edit questions</Link></header>
+    <header className="checkin-header"><div><Link className="back-link" to={historical ? `/history?date=${snapshot.record.localDate}` : '/'}>← {historical ? 'History' : 'Home'}</Link><p className="eyebrow">{historical ? 'Editing past date' : snapshot.record.localDate}</p><h1>Nightly Check-In</h1><p className="screen__description">{historical ? `Editing ${snapshot.record.localDate}. Changes stay attached to this original Check-In.` : completed ? 'Today is complete. You can still edit any answer below.' : 'One gentle scroll. Every answer saves to this device as you go.'}</p></div><Link className="manage-link" to="/settings/nightly-check-in">Edit Questions</Link></header>
     <div className="save-status" role="status" aria-live="polite">
       <span className={`status-dot status-dot--${snapshot.record.status}`} aria-hidden="true" />
       <strong>{completed ? '✓ Completed' : 'Draft'}</strong>
@@ -96,9 +100,9 @@ export function CheckInScreen() {
       {groups.map(([category, questions]) => <section className="checkin-category" key={category}><h2>{category}</h2><div className="question-stack">{questions.map((question) => {
         const observation = snapshot.observations.find((item) => item.trackableId === question.trackable.id)
         const selections = observation ? snapshot.selections.filter((item) => item.observationId === observation.id) : []
-        return <article className="question-card" key={question.item.id}><div className="question-card__heading"><span aria-hidden="true">{question.trackable.icon?.value ?? '✦'}</span><div><h3 id={`question-${question.item.id}`}>{question.version.name}</h3>{question.version.description ? <p>{question.version.description}</p> : null}</div>{question.item.completionBehavior === 'expected' ? <small>Usual</small> : null}</div><QuestionInput question={question} observation={observation} selections={selections} disabled={saving || completionSaving} onSave={(answer) => void save(question.trackable.id, answer)} /></article>
+        return <article className="question-card" key={question.item.id}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><div><h3 id={`question-${question.item.id}`}>{question.version.name}</h3>{question.version.description ? <p>{question.version.description}</p> : null}</div>{question.item.completionBehavior === 'expected' ? <small>Usual</small> : null}</div><QuestionInput question={question} observation={observation} selections={selections} disabled={saving || completionSaving} onSave={(answer) => void save(question.trackable.id, answer)} /></article>
       })}</div></section>)}
-      {warning.length > 0 ? <div className="completion-warning" role="alert"><h2>Finish with unanswered questions?</h2><p>You left {warning.length} usual {warning.length === 1 ? 'question' : 'questions'} unanswered: {warning.join(', ')}.</p><p>That’s okay—unanswered stays unknown.</p><div><button type="button" className="secondary-button" onClick={() => setWarning([])}>Keep checking in</button><button type="button" className="primary-button" onClick={() => void finish(true)}>Finish anyway</button></div></div> : null}
+      {warning.length > 0 ? <div className="completion-warning" role="alert"><h2>Finish with unanswered questions?</h2><p>You left {warning.length} usual {warning.length === 1 ? 'question' : 'questions'} unanswered: {warning.join(', ')}.</p><p>That’s okay—unanswered stays unknown.</p><div><button type="button" className="secondary-button" onClick={() => setWarning([])}>Keep Checking In</button><button type="button" className="primary-button" onClick={() => void finish(true)}>Finish Anyway</button></div></div> : null}
       <button type="submit" className={`primary-button finish-button${completed && !hasCompletedEdits && !completionSaving ? ' finish-button--complete' : ''}`} disabled={saving || completionSaving || (completed && !hasCompletedEdits)}>{primaryLabel}</button>
     </form>
   </section>

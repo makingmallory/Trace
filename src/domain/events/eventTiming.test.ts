@@ -13,7 +13,7 @@ const base: LogRecord = {
 describe('event timing display', () => {
   it('shows exact, time-of-day, date-only, and unknown point precision naturally', () => {
     expect(formatEventTiming({ ...base, startTimePrecision: 'exact', startTime: '2026-08-11T20:42:00.000Z' })).toMatch(/3:42 PM|8:42 PM/)
-    expect(formatEventTiming({ ...base, startTimePrecision: 'timeOfDay', startTimeOfDay: 'late_afternoon' })).toBe('Late afternoon')
+    expect(formatEventTiming({ ...base, startTimePrecision: 'timeOfDay', startTimeOfDay: 'late_afternoon' })).toBe('Late Afternoon')
     expect(formatEventTiming(base)).toBe('Date only')
     expect(formatEventTiming({ ...base, startTimePrecision: 'unknown' })).toBe('Time unknown')
   })
@@ -26,7 +26,7 @@ describe('event timing display', () => {
 
   it('shows mixed precision and ongoing ranges concisely', () => {
     const mixed = formatEventTiming({ ...base, eventTimingKind: 'duration', startTimePrecision: 'timeOfDay', startTimeOfDay: 'late_afternoon', endLocalDate: '2026-08-11', endTimePrecision: 'exact', endTime: '2026-08-12T02:17:00.000Z', timezone: 'America/Chicago' })
-    expect(mixed).toMatch(/^Late afternoon → /)
+    expect(mixed).toMatch(/^Late Afternoon → /)
     expect(mixed).toMatch(/9:17 PM|2:17 AM/)
     expect(formatEventTiming({ ...base, eventTimingKind: 'duration', startTimePrecision: 'timeOfDay', startTimeOfDay: 'morning', ongoing: true })).toBe('Morning → Ongoing')
   })

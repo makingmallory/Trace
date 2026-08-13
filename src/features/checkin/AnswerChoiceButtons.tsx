@@ -33,7 +33,7 @@ export function AnswerChoiceButtons({
           ? selected ? selectedIds.filter((id) => id !== choice.id) : [...selectedIds, choice.id]
           : selected ? [] : [choice.id])}
       >
-        {choice.icon ? <span aria-hidden="true">{choice.icon}</span> : null}
+        {choice.icon ? <span className="emoji-icon" aria-hidden="true">{choice.icon}</span> : null}
         <span>{choice.label}</span>
       </button>
     })}

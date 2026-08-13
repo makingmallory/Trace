@@ -73,6 +73,6 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
     </div></details>
     {details && <p className="version-note">Changing what an answer means creates a new version. Old records keep their original meaning.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
-    <div className="editor-actions"><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : details ? 'Save changes' : 'Create Trackable'}</button><button className="text-button" type="button" onClick={onCancel}>Cancel</button></div>
+    <div className="editor-actions"><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : details ? 'Save Changes' : 'Create Trackable'}</button><button className="secondary-button" type="button" onClick={onCancel}>Cancel</button></div>
   </form>
 }

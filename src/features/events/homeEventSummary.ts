@@ -5,3 +5,7 @@ export function homeEventTiming(record: LogRecord): string {
   const timing = formatEventTiming(record)
   return timing === 'Date only' ? '' : timing
 }
+
+export function homeEventEditPath(recordId: string): string {
+  return `/history/events/${encodeURIComponent(recordId)}/edit`
+}

@@ -3,6 +3,7 @@ import type { Observation, ObservationAnswer, ObservationOptionSelection } from 
 import type { RoutineQuestion, SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
 import { answerFromInput, scalarInputValue } from './questionInput.ts'
 import { AnswerChoiceButtons } from './AnswerChoiceButtons.tsx'
+import { iconGlyph } from '../../presets/iconLibrary.ts'
 
 interface Props {
   question: RoutineQuestion
@@ -37,9 +38,9 @@ export function QuestionInput({ question, observation, selections, disabled = fa
     const selected = currentAnswer.state === 'answered' && currentAnswer.value.kind === 'boolean' ? currentAnswer.value.value : undefined
     control = <AnswerChoiceButtons choices={[{ id: 'false', label: 'No' }, { id: 'true', label: 'Yes' }]} selectedIds={selected === undefined ? [] : [String(selected)]} multiple={false} labelledBy={labelId} disabled={disabled} onChange={(next) => next.length ? save({ state: 'answered', value: { kind: 'boolean', value: next[0] === 'true' } }) : save({ state: 'unanswered' })} />
   } else if (version.inputType === 'single_choice') {
-    control = <AnswerChoiceButtons choices={options.map((option) => ({ id: option.optionId, label: option.label, icon: option.icon?.value }))} selectedIds={selectedIds} multiple={false} labelledBy={labelId} disabled={disabled} onChange={(next) => save(next.length ? { state: 'answered', value: { kind: 'choice', value: null } } : { state: 'unanswered' }, next)} />
+    control = <AnswerChoiceButtons choices={options.map((option) => ({ id: option.optionId, label: option.label, icon: option.icon ? iconGlyph(option.icon) : undefined }))} selectedIds={selectedIds} multiple={false} labelledBy={labelId} disabled={disabled} onChange={(next) => save(next.length ? { state: 'answered', value: { kind: 'choice', value: null } } : { state: 'unanswered' }, next)} />
   } else if (version.inputType === 'multi_select') {
-    control = <AnswerChoiceButtons choices={options.map((option) => ({ id: option.optionId, label: option.label, icon: option.icon?.value }))} selectedIds={selectedIds} multiple labelledBy={labelId} disabled={disabled} onChange={(next) => save(next.length ? { state: 'answered', value: { kind: 'choice', value: null } } : { state: 'unanswered' }, next)} />
+    control = <AnswerChoiceButtons choices={options.map((option) => ({ id: option.optionId, label: option.label, icon: option.icon ? iconGlyph(option.icon) : undefined }))} selectedIds={selectedIds} multiple labelledBy={labelId} disabled={disabled} onChange={(next) => save(next.length ? { state: 'answered', value: { kind: 'choice', value: null } } : { state: 'unanswered' }, next)} />
   } else if (version.inputType === 'text') {
     control = <textarea disabled={disabled} id={`${labelId}-input`} aria-labelledby={labelId} rows={3} value={draftValue} placeholder="Optional notes" onChange={(event) => setDraftValue(event.target.value)} onBlur={() => save(answerFromInput('text', String(draftValue)))} />
   } else {
@@ -51,7 +52,7 @@ export function QuestionInput({ question, observation, selections, disabled = fa
   return <div className="question-control">
     {control}
     <div className="question-actions">
-      {currentAnswer.state === 'answered' ? <button type="button" className="text-button" disabled={disabled} onClick={() => save({ state: 'unanswered' }, [])}>Clear answer</button> : <span className="unanswered-label">Not answered</span>}
+      {currentAnswer.state === 'answered' ? <button type="button" className="text-button" disabled={disabled} onClick={() => save({ state: 'unanswered' }, [])}>Clear Answer</button> : <span className="unanswered-label">Not answered</span>}
     </div>
     {trends.length > 0 ? <fieldset className="trend-question" disabled={disabled}><legend>Compared with yesterday?</legend><div className="answer-buttons answer-buttons--compact">{trends.map((trend) => <button type="button" aria-pressed={observation?.trendValue === trend} key={trend} onClick={() => save(currentAnswer, selectedIds, trend)}>{trend}</button>)}</div></fieldset> : null}
   </div>

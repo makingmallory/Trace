@@ -14,6 +14,7 @@ import type {
 } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
 import { AnswerChoiceButtons } from './AnswerChoiceButtons.tsx'
+import { iconGlyph } from '../../presets/iconLibrary.ts'
 import {
   categoricalTriggerRule,
   conditionIsComplete,
@@ -114,7 +115,7 @@ function ConditionEditor({
         {categorical ? <AnswerChoiceButtons
           choices={source.version.inputType === 'boolean'
             ? [{ id: 'false', label: 'No' }, { id: 'true', label: 'Yes' }]
-            : source.options.map((option) => ({ id: option.optionId, label: option.label, icon: option.icon?.value }))}
+            : source.options.map((option) => ({ id: option.optionId, label: option.label, icon: option.icon ? iconGlyph(option.icon) : undefined }))}
           selectedIds={categoricalSelections()}
           multiple={source.version.inputType !== 'boolean'}
           label={`Answers to ${source.version.name} that show ${question.version.name}`}
@@ -203,10 +204,10 @@ function RoutineItemEditor({
     }
   }
 
-  const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : 'Save changes'
+  const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : 'Save Changes'
   return <article className={`routine-item${saveState === 'saved' ? ' routine-item--saved' : ''}`}>
     <div className="routine-item__top">
-      <span aria-hidden="true">{question.trackable.icon?.value ?? '✦'}</span>
+      <span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span>
       <div><h3>{question.version.name}</h3><small>{question.category.name} · {inputTypeLabel(question.version.inputType)}</small></div>
       <div className="routine-order">
         <button type="button" aria-label={`Move ${question.version.name} earlier`} disabled={index === 0} onClick={() => onMove(-1)}>↑</button>
@@ -236,7 +237,7 @@ function RoutineItemEditor({
       </div>
     </details>
     <span className={`item-save-status${saveState === 'saved' ? ' item-save-status--success' : ''}`} role="status" aria-live="polite">{saveState === 'saved' ? `✓ ${question.version.name} settings saved.` : saveState === 'saving' ? `Saving ${question.version.name} settings…` : ''}</span>
-    <button type="button" className="text-button text-button--danger" onClick={onRemove}>Remove from routine</button>
+    <button type="button" className="text-button text-button--danger" onClick={onRemove}>Remove from Routine</button>
   </article>
 }
 
@@ -263,7 +264,7 @@ export function RoutineSettingsScreen() {
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
     {!configuration.routine ? <div className="empty-state"><span aria-hidden="true">☾</span><h2>Build your nightly routine</h2><p>Start with a few active Trackables. You can adjust the order and details anytime.</p>{configuration.availableTrackables.length === 0 ? <Link className="primary-button" to="/trackables/add">Add a Trackable first</Link> : <button className="primary-button" type="button" onClick={() => void act(() => checkInEngine.createNightlyRoutine())}>Create Nightly Check-In</button>}</div> : <>
       <section className="routine-list">
-        <div className="section-heading"><h2>Your questions</h2><span>{configuration.questions.length}</span></div>
+        <div className="section-heading"><h2>Your Questions</h2><span>{configuration.questions.length}</span></div>
         {configuration.questions.length === 0 ? <p className="notice">Add at least one question below to begin checking in.</p> : configuration.questions.map((question, index) => <RoutineItemEditor
           key={question.item.id}
           question={question}
@@ -274,8 +275,8 @@ export function RoutineSettingsScreen() {
           onSave={(changes) => saveItem(question.item.id, changes)}
         />)}
       </section>
-      <section className="routine-add"><div className="section-heading"><h2>Add active Trackables</h2><span>{configuration.availableTrackables.length}</span></div>{configuration.availableTrackables.length === 0 ? <p className="notice">All active Trackables are already included.</p> : <div className="routine-add__grid">{configuration.availableTrackables.map((question) => <button type="button" key={question.trackable.id} onClick={() => void act(() => checkInEngine.addTrackable(question.trackable.id))}><span aria-hidden="true">{question.trackable.icon?.value ?? '✦'}</span><span>{question.version.name}<small>{question.category.name}</small></span><b aria-hidden="true">＋</b></button>)}</div>}</section>
-      {configuration.questions.length > 0 ? <Link className="primary-button" to="/check-in">Open today’s Check-In</Link> : null}
+      <section className="routine-add"><div className="section-heading"><h2>Add Active Trackables</h2><span>{configuration.availableTrackables.length}</span></div>{configuration.availableTrackables.length === 0 ? <p className="notice">All active Trackables are already included.</p> : <div className="routine-add__grid">{configuration.availableTrackables.map((question) => <button type="button" key={question.trackable.id} onClick={() => void act(() => checkInEngine.addTrackable(question.trackable.id))}><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><span>{question.version.name}<small>{question.category.name}</small></span><b aria-hidden="true">＋</b></button>)}</div>}</section>
+      {configuration.questions.length > 0 ? <Link className="primary-button" to="/check-in">Open Today’s Check-In</Link> : null}
     </>}
   </section>
 }
