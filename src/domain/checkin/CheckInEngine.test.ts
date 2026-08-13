@@ -39,6 +39,7 @@ describe('CheckInEngine routine configuration', () => {
     await engine.moveItem(symptom.id, -1)
     await engine.updateItem(symptom.id, { completionBehavior: 'expected', trendTrackingMode: 'better_same_worse', conditionalRule: { sourceTrackableId: 'score', operator: 'greaterThan', expectedValue: 0 } })
     let configuration = await engine.getConfiguration()
+    expect(configuration.routine?.name).toBe('Daily Check-In')
     expect(configuration.questions.map((question) => question.trackable.id)).toEqual(['symptom', 'score'])
     expect(configuration.questions[0].item.completionBehavior).toBe('expected')
     await engine.removeTrackable(symptom.id)

@@ -6,7 +6,8 @@ import type { Category } from '../../domain/models/index.ts'
 import type { TrackableDetails } from '../../domain/trackables/TrackableEngine.ts'
 import { getPresetById, presetPacks, trackablePresets } from '../../presets/trackablePresets.ts'
 import { AddTrackableScreen, ManageTrackablesScreen, PackCard, PresetCard } from './TrackablesScreen.tsx'
-import { filterPresetGroups, isPresetAlreadyActive } from './trackableUi.ts'
+import { TrackableEditor } from './TrackableEditor.tsx'
+import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, isPresetAlreadyActive } from './trackableUi.ts'
 
 vi.mock('./trackableEngine.ts', () => ({ trackableEngine: {} }))
 
@@ -14,6 +15,14 @@ const categories: readonly Category[] = [
   { id: 'category.skin', name: 'Skin', sortOrder: 1, active: true, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
   { id: 'category.mood-mental', name: 'Mood', sortOrder: 0, active: true, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
 ]
+
+function owned(id: string, name: string, categoryId: string, active = true): TrackableDetails {
+  return {
+    trackable: { id, categoryId, active, archivedAt: active ? null : '', currentVersion: 1, tags: [], dataRole: 'other', recordSemantics: 'daily_value', quickLogEnabled: false, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
+    version: { id: `${id}:v1`, trackableId: id, version: 1, name, inputType: 'boolean', valueDirection: 'neutral', configuration: {}, retiredAt: null, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
+    options: [],
+  }
+}
 
 describe('Trackable preset browsing', () => {
   it('combines search and category filtering, then sorts groups and items', () => {
@@ -26,6 +35,25 @@ describe('Trackable preset browsing', () => {
   it('uses category ordering when all categories are selected', () => {
     const groups = filterPresetGroups(trackablePresets, categories, '', 'all')
     expect(groups.map((group) => group.category.id)).toEqual(['category.mood-mental', 'category.skin'])
+  })
+
+  it('filters owned Trackables by trimmed case-insensitive partial names and category names', () => {
+    const trackables = [owned('acne', 'Acne Location', 'category.skin'), owned('energy', 'Energy Level', 'category.mood-mental'), owned('pilates', 'Pilates', 'category.mood-mental')]
+    expect(filterOwnedTrackables(trackables, categories, '  LoCaT  ').map((item) => item.trackable.id)).toEqual(['acne'])
+    expect(filterOwnedTrackables(trackables, categories, 'skin').map((item) => item.trackable.id)).toEqual(['acne'])
+    expect(filterOwnedTrackables(trackables, categories, 'missing')).toEqual([])
+    expect(filterOwnedTrackables(trackables, categories, '')).toEqual(trackables)
+  })
+
+  it('preserves category grouping, hides empty groups, and never expands the supplied active or archived scope', () => {
+    const active = [owned('acne', 'Acne Location', 'category.skin'), owned('energy', 'Energy Level', 'category.mood-mental')]
+    const archived = [owned('old-acne', 'Old Acne Note', 'category.skin', false)]
+    const groups = filterOwnedTrackableGroups(active, categories, 'acne')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].category.id).toBe('category.skin')
+    expect(groups[0].items.map((item) => item.trackable.id)).toEqual(['acne'])
+    expect(filterOwnedTrackables(archived, categories, 'acne').map((item) => item.trackable.id)).toEqual(['old-acne'])
+    expect(filterOwnedTrackables(active, categories, 'old')).toEqual([])
   })
 
   it('identifies an active ready-made Trackable using the conservative matching rule', () => {
@@ -72,5 +100,14 @@ describe('Trackable preset browsing', () => {
     const markup = renderToStaticMarkup(createElement(MemoryRouter, {}, createElement(ManageTrackablesScreen)))
     expect(markup).toContain('/trackables/manage/categories')
     expect(markup).toContain('/trackables/manage/archived')
+  })
+
+  it('autofocuses Name only for creation while keeping the edit Name field normally editable', () => {
+    const library = { categories, active: [owned('acne', 'Acne Location', 'category.skin')], archived: [] }
+    const createMarkup = renderToStaticMarkup(createElement(TrackableEditor, { library, onCancel: () => undefined, onSaved: () => undefined }))
+    const editMarkup = renderToStaticMarkup(createElement(TrackableEditor, { details: library.active[0], library, onCancel: () => undefined, onSaved: () => undefined }))
+    expect(createMarkup).toContain('autofocus=""')
+    expect(editMarkup).not.toContain('autofocus=""')
+    expect(editMarkup).toContain('value="Acne Location"')
   })
 })

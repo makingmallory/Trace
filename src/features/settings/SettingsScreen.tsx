@@ -124,7 +124,7 @@ export function SettingsScreen() {
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Export Trace Data</h2><p>Download a full-fidelity JSON snapshot. This does not change your ongoing Google Sheets connection.</p></div><button className="button-link" type="button" onClick={() => void exportBackup()}>Export JSON Backup</button></div>
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Restore Trace Data</h2><p>Restore a current backup or safely upgrade a pre-unification backup.</p></div><label className="button-link">Import JSON Backup<input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file) }} /></label></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Trackables</h2><p>Manage Daily Value and Occurrence Trackables in one place.</p></div><Link className="button-link" to="/trackables/manage">Manage Trackables</Link></div>
-      <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Nightly Check-In</h2><p>Choose, order, and configure the questions in your daily routine.</p></div><Link className="button-link" to="/settings/nightly-check-in">Configure Routine</Link></div>
+      <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Daily Check-In</h2><p>Choose, order, and configure the questions in your daily routine.</p></div><Link className="button-link" to="/settings/nightly-check-in">Configure Routine</Link></div>
       </div>
     </ScreenPlaceholder>
   )

@@ -1,3 +1,5 @@
+import { toggleAnswerChoice } from './answerChoiceSelection.ts'
+
 export interface AnswerChoice {
   id: string
   label: string
@@ -29,9 +31,7 @@ export function AnswerChoiceButtons({
         disabled={disabled}
         aria-pressed={selected}
         key={choice.id}
-        onClick={() => onChange(multiple
-          ? selected ? selectedIds.filter((id) => id !== choice.id) : [...selectedIds, choice.id]
-          : selected ? [] : [choice.id])}
+        onClick={() => onChange(toggleAnswerChoice(selectedIds, choice.id, multiple))}
       >
         {choice.icon ? <span className="emoji-icon" aria-hidden="true">{choice.icon}</span> : null}
         <span>{choice.label}</span>

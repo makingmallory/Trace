@@ -178,6 +178,11 @@ describe('History search and metric projection', () => {
     expect(searchHistory(fixture(), 'travel', '2026-08-11').totalMatches).toBe(2)
   })
 
+  it('uses Daily Check-In for user-facing search results even with legacy routine data', () => {
+    expect(searchHistory(fixture(), 'daily check-in', '2026-08-11').results[0].identity).toBe('Daily Check-In')
+    expect(searchHistory(fixture(), 'nightly check-in', '2026-08-11').results[0].identity).toBe('Daily Check-In')
+  })
+
   it('parses and returns only the latest last-occurrence result', () => {
     expect(parseHistoryQuery('When was my last migraine?')).toEqual({ term: 'migraine', last: true })
     const result = searchHistory(fixture(), 'last migraine', '2026-08-11')

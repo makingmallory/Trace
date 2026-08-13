@@ -30,6 +30,13 @@ Implementation details and upgrade limitations are documented in `docs/unified-t
 - `TrackableField` is the shared structured-field link for both Nightly and Quick Log. It pins stable owner and field version identities, supports ordering, required state, and declarative conditional rules. All field observations share the parent's LogRecord rather than becoming unrelated records. Old schema-v2 field rows without an owner version remain readable as compatibility rows.
 - Structured field values remain normalized observations/selections and therefore queryable for future Trends. New structured-field analytics UI remains deferred.
 
+## Batch 2 Daily Check-In usability amendment
+
+- **Daily Check-In** is the standard user-facing product term. Older “Nightly Check-In” wording may remain only in internal symbols, stable routes, compatibility data, and historical technical documentation.
+- The user’s active Trackables screen provides immediate, case-insensitive name/category filtering while preserving category grouping and hiding groups without matches. Archived Trackables remain a separate scope and may be searched only within that scope.
+- Editing an existing Trackable opens without forcing focus into Name; intentional creation-time Name autofocus remains allowed.
+- Single Choice and Multi Choice controls adapt their columns to available width and keep long labels fully readable without truncation.
+
 **Version:** 0.1  
 **Status:** Pre-development source of truth  
 **Date:** August 10, 2026  
@@ -778,7 +785,7 @@ A RoutineItem describes *how and when it is asked.*
 
 V1 ships primarily with:
 
-**Nightly Check-In**
+**Daily Check-In**
 
 The data model must support future routines such as:
 - Morning Check-In
@@ -1248,7 +1255,7 @@ Daily Check-Ins primarily belong to a local calendar date.
 
 ---
 
-# 32. Events in Nightly Check-In
+# 32. Events in Daily Check-In
 
 Events can optionally appear in a routine.
 
@@ -1596,7 +1603,7 @@ Primary interface:
 **calendar**
 
 Calendar cells should communicate:
-- completed nightly check-in
+- completed Daily Check-In
 - incomplete/draft check-in
 - no check-in
 - events
@@ -2446,7 +2453,7 @@ Scale/options
 Icon
 Color
 Logging style
-Add to nightly check-in?
+Add to Daily Check-In?
 Track changes?
 ```
 
@@ -2940,7 +2947,7 @@ Do not make native iOS distribution a V1 blocker.
 ## Tracking
 - Trackables
 - Categories
-- Nightly Check-In
+- Daily Check-In
 - Events
 - pinned events
 - routines
@@ -3641,8 +3648,8 @@ A usable V1 should allow a user to:
 2. start fresh
 3. select preset Trackables
 4. create a custom Trackable
-5. configure Nightly Check-In
-6. log a complete nightly check-in
+5. configure Daily Check-In
+6. log a complete Daily Check-In
 7. have conditional follow-ups work
 8. log an Event
 9. log repeated Events
@@ -3737,7 +3744,7 @@ Implement:
 
 No Google dependency required for UI testing.
 
-## Milestone 2 — Nightly Check-In
+## Milestone 2 — Daily Check-In
 
 Implement:
 - routine

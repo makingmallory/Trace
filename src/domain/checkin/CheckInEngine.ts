@@ -136,7 +136,7 @@ export class CheckInEngine {
     if (existing) return existing
     const timestamp = this.timestamp()
     const routine: Routine = {
-      id: this.createId(), name: 'Nightly Check-In', active: true, scheduleType: 'daily',
+      id: this.createId(), name: 'Daily Check-In', active: true, scheduleType: 'daily',
       createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
     }
     await this.repository.save('routines', routine)
@@ -260,11 +260,11 @@ export class CheckInEngine {
   private async openDailyCheckIn(localDate: string, timezone: IANATimeZone | null): Promise<CheckInSnapshot> {
     await deduplicateObservationSelections(this.repository, this.timestamp())
     const configuration = await this.getConfiguration()
-    if (!configuration.routine) throw new Error('Set up your Nightly Check-In first.')
+    if (!configuration.routine) throw new Error('Set up your Daily Check-In first.')
     const records = await this.repository.getAll('logRecords')
     let record = records.find((item) => item.recordKind === 'routine' && item.routineId === configuration.routine!.id && item.localDate === localDate && !item.deletedAt)
     if (!record) {
-      if (configuration.questions.length === 0) throw new Error('Set up your Nightly Check-In first.')
+      if (configuration.questions.length === 0) throw new Error('Set up your Daily Check-In first.')
       const timestamp = this.timestamp()
       record = {
         id: this.createId(), recordKind: 'routine', routineId: configuration.routine.id, localDate,

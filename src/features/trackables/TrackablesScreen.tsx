@@ -5,7 +5,7 @@ import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { getPresetById, presetPacks, trackablePresets, type PresetPack, type TrackablePreset } from '../../presets/trackablePresets.ts'
 import { TrackableEditor } from './TrackableEditor.tsx'
 import { trackableEngine } from './trackableEngine.ts'
-import { filterPresetGroups, inputTypes, isPresetAlreadyActive } from './trackableUi.ts'
+import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, inputTypes, isPresetAlreadyActive } from './trackableUi.ts'
 import { ActionIcon } from '../../components/ActionIcons.tsx'
 import { isQuickLogEligible, recordSemanticsFor } from '../../domain/trackables/trackableSemantics.ts'
 
@@ -40,8 +40,10 @@ function TrackableCard({ details, onArchive }: { details: TrackableDetails; onAr
 export function TrackablesScreen() {
   const { library, error, setError, refresh } = useTrackableLibrary()
   const [notice, setNotice] = useState('')
+  const [search, setSearch] = useState('')
   if (!library) return <Loading error={error} />
-  const groups = library.categories.map((category) => ({ category, items: library.active.filter((item) => item.trackable.categoryId === category.id) })).filter(({ items }) => items.length > 0)
+  const groups = filterOwnedTrackableGroups(library.active, library.categories, search)
+  const searching = Boolean(search.trim())
 
   async function archive(details: TrackableDetails) {
     setError(''); setNotice('')
@@ -51,8 +53,9 @@ export function TrackablesScreen() {
 
   return <section className="screen trackables-screen">
     <header className="collection-hero"><p className="eyebrow">Your collection</p><div className="collection-hero__title-row"><h1>Trackables</h1><div className="collection-hero__actions"><Link className="bubble-action" to="/trackables/add" aria-label="Add Trackable" title="Add Trackable"><ActionIcon name="add" /></Link><Link className="bubble-action" to="/trackables/manage" aria-label="Manage Trackables" title="Manage Trackables"><ActionIcon name="settings" /></Link></div></div><p className="screen__description">Little pieces of your life, ready whenever you want to check in.</p><p className="collection-count"><strong>{library.active.length}</strong> active Trackable{library.active.length === 1 ? '' : 's'}</p></header>
+    {library.active.length > 0 ? <label className="form-field owned-trackables-search"><span>Search My Trackables</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try acne, energy, Pilates…" /></label> : null}
     {notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}
-    {groups.length === 0 ? <div className="empty-state"><span>✦</span><h2>Your collection is ready to grow</h2><p>Start with the Trackable Library, a Starter Pack, or something completely your own.</p><Link className="primary-button button-link" to="/trackables/add">Add your first Trackable</Link></div> : <div className="collection-groups">{groups.map(({ category, items }) => <section className="collection-group" key={category.id}><div className="collection-group__heading"><h2>{category.name}</h2><span>{items.length}</span></div><div className="collection-grid">{items.map((details) => <TrackableCard key={details.trackable.id} details={details} onArchive={() => void archive(details)} />)}</div></section>)}</div>}
+    {groups.length === 0 ? searching ? <div className="empty-state"><span>◇</span><h2>No Trackables Found</h2><p>Try a different name or category.</p></div> : <div className="empty-state"><span>✦</span><h2>Your collection is ready to grow</h2><p>Start with the Trackable Library, a Starter Pack, or something completely your own.</p><Link className="primary-button button-link" to="/trackables/add">Add your first Trackable</Link></div> : <div className="collection-groups">{groups.map(({ category, items }) => <section className="collection-group" key={category.id}><div className="collection-group__heading"><h2>{category.name}</h2><span>{items.length}</span></div><div className="collection-grid">{items.map((details) => <TrackableCard key={details.trackable.id} details={details} onArchive={() => void archive(details)} />)}</div></section>)}</div>}
   </section>
 }
 
@@ -143,10 +146,12 @@ export function ManageTrackablesScreen() {
 export function ArchivedTrackablesScreen() {
   const { library, error, setError, refresh } = useTrackableLibrary()
   const [notice, setNotice] = useState('')
+  const [search, setSearch] = useState('')
   if (!library) return <Loading error={error} />
   const categoryNames = new Map(library.categories.map((category) => [category.id, category.name]))
+  const archived = filterOwnedTrackables(library.archived, library.categories, search)
   async function reactivate(details: TrackableDetails) { try { await trackableEngine.setTrackableActive(details.trackable.id, true); await refresh(); setNotice(`${details.version.name} reactivated.`) } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not reactivate this Trackable.') } }
-  return <Page eyebrow="Manage" title="Archived Trackables" description="Nothing is lost here. Bring a Trackable back whenever it feels useful." backTo="/trackables/manage">{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}{library.archived.length === 0 ? <div className="empty-state"><span>◇</span><h2>Nothing archived</h2><p>Your tucked-away Trackables will appear here.</p></div> : <div className="archived-grid">{library.archived.map((details) => <article className="archive-card" key={details.trackable.id}><span className="collection-card__icon" aria-hidden="true">{iconGlyph(details.trackable.icon)}</span><div><h3>{details.version.name}</h3><p>{categoryNames.get(details.trackable.categoryId)}</p></div><button className="secondary-button" onClick={() => void reactivate(details)}>Reactivate</button></article>)}</div>}</Page>
+  return <Page eyebrow="Manage" title="Archived Trackables" description="Nothing is lost here. Bring a Trackable back whenever it feels useful." backTo="/trackables/manage">{library.archived.length > 0 ? <label className="form-field owned-trackables-search"><span>Search Archived Trackables</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search names or categories…" /></label> : null}{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}{library.archived.length === 0 ? <div className="empty-state"><span>◇</span><h2>Nothing archived</h2><p>Your tucked-away Trackables will appear here.</p></div> : archived.length === 0 ? <div className="empty-state"><span>◇</span><h2>No Trackables Found</h2><p>Try a different name or category.</p></div> : <div className="archived-grid">{archived.map((details) => <article className="archive-card" key={details.trackable.id}><span className="collection-card__icon" aria-hidden="true">{iconGlyph(details.trackable.icon)}</span><div><h3>{details.version.name}</h3><p>{categoryNames.get(details.trackable.categoryId)}</p></div><button className="secondary-button" onClick={() => void reactivate(details)}>Reactivate</button></article>)}</div>}</Page>
 }
 
 export function CategoriesScreen() {

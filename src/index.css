@@ -571,8 +571,9 @@ h1 {
 .question-card__heading p { margin: var(--space-xs) 0 0; color: var(--color-muted-text); font-size: 0.85rem; }
 .question-card__heading small { padding: 0.3rem 0.55rem; border-radius: var(--radius-pill); color: var(--color-primary-strong); background: var(--color-background-accent); font-weight: 750; }
 .question-control { display: grid; gap: var(--space-sm); }
-.answer-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr)); gap: var(--space-xs); }
-.answer-buttons button { min-height: 3rem; padding: 0.6rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); background: var(--color-surface-elevated); font-weight: 700; cursor: pointer; }
+.answer-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr)); grid-auto-rows: minmax(3rem, auto); gap: var(--space-xs); }
+.answer-buttons button { display: flex; min-width: 0; min-height: 3rem; height: auto; align-items: center; justify-content: center; gap: var(--space-xs); padding: 0.65rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); background: var(--color-surface-elevated); font-weight: 700; line-height: 1.3; text-align: center; white-space: normal; cursor: pointer; }
+.answer-buttons button > span { min-width: 0; overflow-wrap: anywhere; }
 .answer-buttons button[aria-pressed="true"] { border-color: var(--color-primary); color: var(--color-primary-strong); background: var(--color-background-accent); box-shadow: inset 0 0 0 1px var(--color-primary); }
 .answer-buttons--scale { grid-template-columns: repeat(auto-fit, minmax(2.75rem, 1fr)); }
 .answer-buttons--compact { display: flex; flex-wrap: wrap; }
@@ -1075,6 +1076,7 @@ h1 {
 .choice-card:hover { transform: translateY(-2px); }
 
 .preset-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(11rem, 0.45fr); gap: var(--space-md); padding: var(--space-md); border-radius: var(--radius-lg); background: var(--color-background-accent); }
+.owned-trackables-search { width: min(28rem, 100%); }
 .preset-tile { display: grid; grid-template-columns: auto 1fr auto; min-height: 8rem; }
 .preset-tile .collection-card__icon { grid-row: span 2; }
 .preset-tile .tile-action { grid-column: 3; min-height: 2.5rem; padding: 0.45rem 0.7rem; border: 0; border-radius: var(--radius-sm); color: var(--color-primary-strong); background: var(--color-background-accent); font-weight: 800; cursor: pointer; }

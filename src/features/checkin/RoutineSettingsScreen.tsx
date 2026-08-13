@@ -258,11 +258,11 @@ export function RoutineSettingsScreen() {
     await load()
   }
 
-  if (!configuration) return <div className="screen trackables-loading">Loading Nightly Check-In…</div>
+  if (!configuration) return <div className="screen trackables-loading">Loading Daily Check-In…</div>
   return <section className="screen routine-settings">
-    <header className="subpage-header"><Link className="back-link" to="/settings">← Settings</Link><p className="eyebrow">Tracking setup</p><h1>Nightly Check-In</h1><p className="screen__description">Choose only what belongs in your regular evening flow. Removing a question never deletes its Trackable.</p></header>
+    <header className="subpage-header"><Link className="back-link" to="/settings">← Settings</Link><p className="eyebrow">Tracking setup</p><h1>Daily Check-In</h1><p className="screen__description">Choose only what belongs in your regular daily flow. Removing a question never deletes its Trackable.</p></header>
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
-    {!configuration.routine ? <div className="empty-state"><span aria-hidden="true">☾</span><h2>Build your nightly routine</h2><p>Start with a few active Trackables. You can adjust the order and details anytime.</p>{configuration.availableTrackables.length === 0 ? <Link className="primary-button" to="/trackables/add">Add a Trackable first</Link> : <button className="primary-button" type="button" onClick={() => void act(() => checkInEngine.createNightlyRoutine())}>Create Nightly Check-In</button>}</div> : <>
+    {!configuration.routine ? <div className="empty-state"><span aria-hidden="true">☾</span><h2>Build your daily routine</h2><p>Start with a few active Trackables. You can adjust the order and details anytime.</p>{configuration.availableTrackables.length === 0 ? <Link className="primary-button" to="/trackables/add">Add a Trackable first</Link> : <button className="primary-button" type="button" onClick={() => void act(() => checkInEngine.createNightlyRoutine())}>Create Daily Check-In</button>}</div> : <>
       <section className="routine-list">
         <div className="section-heading"><h2>Your Questions</h2><span>{configuration.questions.length}</span></div>
         {configuration.questions.length === 0 ? <p className="notice">Add at least one question below to begin checking in.</p> : configuration.questions.map((question, index) => <RoutineItemEditor

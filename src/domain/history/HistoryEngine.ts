@@ -360,7 +360,7 @@ function searchableRecord(data: HistoryData, record: LogRecord): { identity: str
   }
   if (record.recordKind === 'routine') {
     const routine = data.routines.find((item) => item.id === record.routineId)
-    return { identity: routine?.name ?? 'Nightly Check-In', terms: [routine?.name, 'nightly check-in', record.status, ...contexts].filter(Boolean).join(' '), context: contexts[0] ?? `${record.status} check-in`, timing: '' }
+    return { identity: 'Daily Check-In', terms: [routine?.name, 'daily check-in', 'nightly check-in', record.status, ...contexts].filter(Boolean).join(' '), context: contexts[0] ?? `${record.status} check-in`, timing: '' }
   }
   return null
 }

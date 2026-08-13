@@ -7,6 +7,11 @@ export interface PresetGroup {
   presets: readonly TrackablePreset[]
 }
 
+export interface TrackableGroup {
+  category: Category
+  items: readonly TrackableDetails[]
+}
+
 export const inputTypes: readonly { value: InputType; label: string }[] = [
   { value: 'scale', label: 'Scale' }, { value: 'boolean', label: 'Yes / No' },
   { value: 'single_choice', label: 'Single choice' }, { value: 'multi_select', label: 'Multi-select' },
@@ -43,4 +48,30 @@ export function filterPresetGroups(
         .sort((a, b) => a.name.localeCompare(b.name)),
     }))
     .filter((group) => group.presets.length > 0)
+}
+
+export function filterOwnedTrackables(
+  trackables: readonly TrackableDetails[],
+  categories: readonly Category[],
+  search: string,
+): readonly TrackableDetails[] {
+  const query = search.trim().toLocaleLowerCase()
+  if (!query) return trackables
+  const categoryNames = new Map(categories.map((category) => [category.id, category.name.toLocaleLowerCase()]))
+  return trackables.filter(({ trackable, version }) =>
+    version.name.toLocaleLowerCase().includes(query)
+    || categoryNames.get(trackable.categoryId)?.includes(query),
+  )
+}
+
+export function filterOwnedTrackableGroups(
+  trackables: readonly TrackableDetails[],
+  categories: readonly Category[],
+  search: string,
+): readonly TrackableGroup[] {
+  const filtered = filterOwnedTrackables(trackables, categories, search)
+  return categories.map((category) => ({
+    category,
+    items: filtered.filter((item) => item.trackable.categoryId === category.id),
+  })).filter(({ items }) => items.length > 0)
 }
