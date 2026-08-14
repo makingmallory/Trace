@@ -11,6 +11,7 @@ import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { clearCalendarFormatting } from './calendarFormatting.ts'
 import { historyEngine } from './historyEngine.ts'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
+import { SharedPageHero } from '../../components/SharedPageHero.tsx'
 
 const validDate = /^\d{4}-\d{2}-\d{2}$/
 
@@ -239,7 +240,7 @@ export function HistoryScreen() {
   const calendarTitle = calendarView === 'month' ? dateLabel(`${visibleMonth}-01`, { month: 'long', year: 'numeric' }) : weekLabel(dates)
 
   return <section className="screen history-screen">
-    <header className="history-header"><div><p className="eyebrow">Your records</p><h1>History</h1><p className="screen__description">Review your data and uncover patterns over time.</p></div></header>
+    <SharedPageHero><header className="history-header"><div><p className="eyebrow">Your records</p><h1>History</h1><p className="screen__description">Review your data and uncover patterns over time.</p></div></header></SharedPageHero>
     {searchOpen ? <form id="history-search-panel" className="history-search" role="search" onSubmit={(event) => { event.preventDefault(); submitSearch() }}>
       <div className="history-search-field"><label className="form-field"><span>Search History</span><input ref={searchInputRef} type="search" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen && Boolean(suggestions.length)} aria-controls="history-search-suggestions" aria-activedescendant={activeSuggestion >= 0 ? `history-suggestion-${activeSuggestion}` : undefined} value={query} onFocus={() => setSuggestionsOpen(Boolean(query.trim()))} onChange={(event) => { setQuery(event.target.value); setSuggestionsOpen(Boolean(event.target.value.trim())); setActiveSuggestion(-1) }} onKeyDown={handleSuggestionKey} placeholder="Search events, symptoms, notes…" /></label>{suggestionsOpen && suggestions.length ? <div id="history-search-suggestions" className="history-search-suggestions" role="listbox" aria-label="History search suggestions">{suggestions.map((suggestion, index) => <button id={`history-suggestion-${index}`} type="button" role="option" aria-selected={activeSuggestion === index} className={activeSuggestion === index ? 'is-active' : ''} key={suggestion.label.toLowerCase()} onClick={() => selectSuggestion(suggestion.label)}>{suggestion.label}</button>)}</div> : null}</div>
       <button className="primary-button">Search</button>

@@ -98,7 +98,7 @@ export function LogEventScreen() {
       navigate(recordId || searchParams.get('date') ? `/history?date=${result.record.localDate}` : '/', { replace: true, state: { loggedEventId: result.record.id } })
     } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this Quick Log entry.') } finally { setBusy(false) }
   }
-  return <section className="screen log-event-screen"><header className="event-log-header"><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><InlineBackHeader to={recordId ? `/history?date=${start.localDate}` : '/quick-log'} label={recordId ? 'Edit Quick Log entry' : 'Quick Log'} /><h1>{details.definition.name}</h1></div></div></header>
+  return <section className="screen log-event-screen"><header className="event-log-header page-header"><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><InlineBackHeader to={recordId ? `/history?date=${start.localDate}` : '/quick-log'} label={recordId ? 'Edit Quick Log entry' : 'Quick Log'} /><h1>{details.definition.name}</h1></div></div></header>
     <form className="event-log-form" onSubmit={submit}>
       <section className="event-timing-card"><h2>When?</h2>
         <PointTimingInput value={start} onChange={setStart} dayOnly={false} />
