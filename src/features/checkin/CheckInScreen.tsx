@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { OccurrenceConflictError, type CheckInSnapshot, type RoutineQuestion, type SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
@@ -6,6 +6,16 @@ import { QuestionInput } from './QuestionInput.tsx'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { shouldReturnHomeAfterCompletion } from './checkInNavigation.ts'
 import { evaluateConditionalRule } from '../../domain/checkin/conditionalRules.ts'
+import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
+
+function displayDate(localDate: string): string {
+  const date = new Date(`${localDate}T12:00:00`)
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(date)
+}
+
+function categoryAccentStyle(category: { id: string; color?: string }): CSSProperties {
+  return { '--checkin-category-accent': effectiveCategoryColor(category) } as CSSProperties
+}
 
 export function CheckInScreen() {
   const navigate = useNavigate()
@@ -24,8 +34,11 @@ export function CheckInScreen() {
   useEffect(() => () => window.clearTimeout(messageTimer.current), [])
 
   const groups = useMemo(() => {
-    const result = new Map<string, RoutineQuestion[]>()
-    for (const question of snapshot?.visibleQuestions ?? []) result.set(question.category.name, [...(result.get(question.category.name) ?? []), question])
+    const result = new Map<string, { category: RoutineQuestion['category']; questions: RoutineQuestion[] }>()
+    for (const question of snapshot?.visibleQuestions ?? []) {
+      const current = result.get(question.category.id)
+      result.set(question.category.id, { category: question.category, questions: [...(current?.questions ?? []), question] })
+    }
     return [...result.entries()]
   }, [snapshot])
 
@@ -92,18 +105,17 @@ export function CheckInScreen() {
   const statusDetail = saving
     ? completed ? 'Saving changes…' : 'Saving locally…'
     : savedMessage
+  const answeredCount = snapshot.visibleQuestions.filter((question) => snapshot.effectiveAnswers.get(question.trackable.id)?.answer.state === 'answered').length
+  const progress = snapshot.visibleQuestions.length ? Math.round((answeredCount / snapshot.visibleQuestions.length) * 100) : 0
 
-  return <section className="screen checkin-screen">
-    <header className="checkin-header"><div><Link className="back-link" to={historical ? `/history?date=${snapshot.record.localDate}` : '/'}>← {historical ? 'History' : 'Home'}</Link><p className="eyebrow">{historical ? 'Editing past date' : snapshot.record.localDate}</p><h1>Daily Check-In</h1><p className="screen__description">{historical ? `Editing ${snapshot.record.localDate}. Changes stay attached to this original Check-In.` : completed ? 'Today is complete. You can still edit any answer below.' : 'One gentle scroll. Every answer saves to this device as you go.'}</p></div><Link className="manage-link" to="/settings/nightly-check-in">Edit Questions</Link></header>
-    <div className="save-status" role="status" aria-live="polite">
-      <span className={`status-dot status-dot--${snapshot.record.status}`} aria-hidden="true" />
-      <strong>{completed ? '✓ Completed' : 'Draft'}</strong>
-      {statusDetail ? <span className="save-status__detail">{statusDetail}</span> : null}
-    </div>
+  return <section className="screen checkin-screen checkin-screen--daily">
+    <header className="checkin-header"><div><h1>Daily Check-In</h1><p className="screen__description">{historical ? `Editing ${snapshot.record.localDate}. Changes stay attached to this original Check-In.` : completed ? 'Today is complete. You can still edit any answer below.' : 'Your answers are saved automatically to this device.'}</p></div><div className="checkin-header__actions"><time className="checkin-date" dateTime={snapshot.record.localDate}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></svg>{displayDate(snapshot.record.localDate)}</time><Link className="manage-link" to="/settings/nightly-check-in">Edit Questions</Link></div></header>
+    <div className="checkin-progress" role="status" aria-live="polite"><span><strong>{answeredCount}</strong> of {snapshot.visibleQuestions.length} answered</span><div className="checkin-progress__track" aria-hidden="true"><i style={{ width: `${progress}%` }} /></div>{statusDetail ? <span className="checkin-progress__detail">{statusDetail}</span> : null}</div>
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
     <form className="checkin-form" onSubmit={(event) => { event.preventDefault(); void finish() }}>
+      <nav className="checkin-category-jumps" aria-label="Check-In categories">{groups.map(([categoryId, { category, questions }]) => <button type="button" key={categoryId} onClick={() => document.getElementById(`checkin-category-${categoryId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span aria-hidden="true">{iconGlyph(questions[0]?.trackable.icon)}</span><small>{category.name}</small></button>)}</nav>
       <div className="section-heading"><h2>Usual Questions</h2></div>
-      {groups.map(([category, questions]) => <section className="checkin-category" key={category}><h2>{category}</h2><div className="question-stack">{questions.map((question) => {
+      {groups.map(([categoryId, { category, questions }]) => <section className="checkin-category" id={`checkin-category-${categoryId}`} style={categoryAccentStyle(category)} key={categoryId}><h2>{category.name}</h2><div className="question-stack">{questions.map((question) => {
         const observation = snapshot.observations.find((item) => item.trackableId === question.trackable.id)
         const selections = observation ? snapshot.selections.filter((item) => item.observationId === observation.id) : []
         const quickLogCount = snapshot.quickLogSummaries[question.trackable.id]
@@ -112,7 +124,7 @@ export function CheckInScreen() {
         })
         return <article className="question-card" key={question.item.id}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><div><h3 id={`question-${question.item.id}`}>{question.version.name}</h3>{question.version.description ? <p>{question.version.description}</p> : null}{quickLogCount ? <p>{quickLogCount} logged today</p> : null}</div>{question.item.completionBehavior === 'expected' ? <small>Usual</small> : null}</div><QuestionInput question={question} observation={observation} selections={selections} prefill={snapshot.defaultAnswers[question.trackable.id]} disabled={saving || completionSaving} onSave={(answer) => void save(question.trackable.id, answer)} />{fieldInputs.length ? <div className="structured-fields">{fieldInputs.map((field) => { const fieldObservation = snapshot.observations.find((item) => item.trackableId === field.trackable.id); const fieldSelections = fieldObservation ? snapshot.selections.filter((item) => item.observationId === fieldObservation.id) : []; const fieldQuestion = { ...question, item: { ...question.item, id: `${question.item.id}-${field.field.id}` }, trackable: field.trackable, version: field.version, options: field.options, category: field.category }; return <div key={field.field.id}><h4 id={`question-${question.item.id}-${field.field.id}`}>{field.version.name}{field.field.required ? ' *' : ''}</h4><QuestionInput question={fieldQuestion} observation={fieldObservation} selections={fieldSelections} disabled={saving || completionSaving} onSave={(answer) => void save(field.trackable.id, answer)} /></div> })}</div> : null}</article>
       })}</div></section>)}
-      {snapshot.loggedToday.length ? <section className="checkin-category"><h2>Logged Today</h2><p className="screen__description">For review only—nothing else to answer.</p><div className="question-stack">{snapshot.loggedToday.map((item) => <Link className="question-card" key={item.trackable.id} to={`/history/quick-log/${encodeURIComponent(item.recordId)}/edit`}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(item.trackable.icon)}</span><div><h3>{item.version.name}</h3><p>{item.timing ? item.timing.replace(/\b\w/g, (letter) => letter.toUpperCase()) : `${item.count} ${item.count === 1 ? 'entry' : 'entries'}`}</p></div></div></Link>)}</div></section> : null}
+      {snapshot.loggedToday.length ? <section className="checkin-category checkin-category--logged"><h2>Logged Today</h2><p className="screen__description">For review only—nothing else to answer.</p><div className="question-stack">{snapshot.loggedToday.map((item) => <Link className="question-card" key={item.trackable.id} to={`/history/quick-log/${encodeURIComponent(item.recordId)}/edit`}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(item.trackable.icon)}</span><div><h3>{item.version.name}</h3><p>{item.timing ? item.timing.replace(/\b\w/g, (letter) => letter.toUpperCase()) : `${item.count} ${item.count === 1 ? 'entry' : 'entries'}`}</p></div><span className="logged-today__chevron" aria-hidden="true">›</span></div></Link>)}</div></section> : null}
       {warning.length > 0 ? <div className="completion-warning" role="alert"><h2>Finish with unanswered questions?</h2><p>You left {warning.length} usual {warning.length === 1 ? 'question' : 'questions'} unanswered: {warning.join(', ')}.</p><p>That’s okay—unanswered stays unknown.</p><div><button type="button" className="secondary-button" onClick={() => setWarning([])}>Keep Checking In</button><button type="button" className="primary-button" onClick={() => void finish(true)}>Finish Anyway</button></div></div> : null}
       <button type="submit" className={`primary-button finish-button${completed && !hasCompletedEdits && !completionSaving ? ' finish-button--complete' : ''}`} disabled={saving || completionSaving || (completed && !hasCompletedEdits)}>{primaryLabel}</button>
     </form>

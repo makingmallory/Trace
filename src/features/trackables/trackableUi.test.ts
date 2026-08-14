@@ -54,6 +54,7 @@ describe('Trackable preset browsing', () => {
     expect(groups[0].items.map((item) => item.trackable.id)).toEqual(['acne'])
     expect(filterOwnedTrackables(archived, categories, 'acne').map((item) => item.trackable.id)).toEqual(['old-acne'])
     expect(filterOwnedTrackables(active, categories, 'old')).toEqual([])
+    expect(filterOwnedTrackableGroups(active, categories, '', 'category.skin').map((group) => group.category.id)).toEqual(['category.skin'])
   })
 
   it('identifies an active ready-made Trackable using the conservative matching rule', () => {

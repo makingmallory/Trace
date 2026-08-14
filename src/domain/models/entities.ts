@@ -37,6 +37,8 @@ export interface Category extends SyncableEntity {
   name: string
   sortOrder: number
   active: boolean
+  /** Optional user override. Omitted values use a stable shared palette. */
+  color?: string
 }
 
 export interface Trackable extends SyncableEntity {

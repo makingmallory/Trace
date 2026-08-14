@@ -75,6 +75,7 @@ describe('History calendar and detail', () => {
     const data = { ...base, logRecords: [...base.logRecords, record('routine-draft', '2026-08-09', 'routine', { routineId: 'nightly', status: 'draft' })] }
     const summaries = buildCalendarSummaries(data); const august10 = summaries.get('2026-08-10')
     expect(august10).toMatchObject({ checkInStatus: 'completed', eventCount: 2 })
+    expect(august10?.activityCategoryIds).toEqual(['health'])
     expect(summaries.get('2026-08-09')?.checkInStatus).toBe('draft')
   })
 

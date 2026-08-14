@@ -68,9 +68,10 @@ export function filterOwnedTrackableGroups(
   trackables: readonly TrackableDetails[],
   categories: readonly Category[],
   search: string,
+  categoryId = 'all',
 ): readonly TrackableGroup[] {
   const filtered = filterOwnedTrackables(trackables, categories, search)
-  return categories.map((category) => ({
+  return categories.filter((category) => categoryId === 'all' || category.id === categoryId).map((category) => ({
     category,
     items: filtered.filter((item) => item.trackable.categoryId === category.id),
   })).filter(({ items }) => items.length > 0)

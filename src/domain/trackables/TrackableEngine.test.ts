@@ -97,6 +97,15 @@ describe('TrackableEngine', () => {
     await expect(engine.renameCategory(category.id, ' SLEEP & ENERGY ')).rejects.toThrow('Category names must be unique.')
   })
 
+  it('persists a normalized category color and can restore automatic color', async () => {
+    const { engine, repository } = setup()
+    await engine.initialize()
+    await engine.setCategoryColor('category.skin', '#A1B2C3')
+    expect((await repository.getAll('categories')).find((category) => category.id === 'category.skin')?.color).toBe('#a1b2c3')
+    await engine.setCategoryColor('category.skin', undefined)
+    expect((await repository.getAll('categories')).find((category) => category.id === 'category.skin')?.color).toBeUndefined()
+  })
+
   it('prevents adding an active ready-made Trackable twice', async () => {
     const { engine } = setup()
     await engine.createFromPreset('preset.skin.acne-severity')

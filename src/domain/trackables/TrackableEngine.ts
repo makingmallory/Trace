@@ -18,6 +18,7 @@ import type {
 import type { DataRepository } from '../../data/repository/DataRepository.ts'
 import { isSupportedIcon } from '../../presets/iconLibrary.ts'
 import { categoryPresets, getPresetById, presetPacks, trackablePresets, type TrackablePreset } from '../../presets/trackablePresets.ts'
+import { normalizeCategoryColor } from '../../themes/categoryColors.ts'
 
 export interface OptionDraft {
   optionId?: string
@@ -240,6 +241,11 @@ export class TrackableEngine {
   async setCategoryActive(id: string, active: boolean): Promise<void> {
     const category = await this.requireCategory(id)
     await this.repository.save('categories', { ...category, active, updatedAt: this.timestamp(), revision: category.revision + 1 })
+  }
+
+  async setCategoryColor(id: string, color: string | undefined): Promise<void> {
+    const category = await this.requireCategory(id)
+    await this.repository.save('categories', { ...category, ...(color ? { color: normalizeCategoryColor(color) } : { color: undefined }), updatedAt: this.timestamp(), revision: category.revision + 1 })
   }
 
   async reorderCategory(id: string, direction: -1 | 1): Promise<void> {

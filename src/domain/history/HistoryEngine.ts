@@ -27,7 +27,8 @@ export interface CalendarDaySummary {
   localDate: string
   checkInStatus: 'draft' | 'completed' | null
   eventCount: number
-  eventIcons: readonly IconReference[]
+  /** One stable category identity per day, never one per individual record. */
+  activityCategoryIds: readonly string[]
 }
 
 export interface HistoryAnswer {
@@ -36,16 +37,19 @@ export interface HistoryAnswer {
   value: string
   state: Observation['answer']['state']
   trendValue?: string
+  icon?: IconReference
 }
 
 export interface HistoryAnswerGroup {
   category: string
+  categoryId?: string
   answers: readonly HistoryAnswer[]
 }
 
 export interface HistoryEventDetail {
   record: LogRecord
   definition: EventDefinition
+  category?: Category
   timing: string
   fields: readonly HistoryAnswer[]
 }
@@ -240,7 +244,8 @@ export function formatHistoryAnswer(data: HistoryData, observation: Observation)
 function answerDetail(data: HistoryData, observation: Observation): HistoryAnswer | null {
   const version = data.trackableVersions.find((item) => item.trackableId === observation.trackableId && item.version === observation.trackableVersion)
   if (!version) return null
-  return { observationId: observation.id, name: version.name, value: formatHistoryAnswer(data, observation), state: observation.answer.state, trendValue: observation.trendValue }
+  const trackable = data.trackables.find((item) => item.id === observation.trackableId)
+  return { observationId: observation.id, name: version.name, value: formatHistoryAnswer(data, observation), state: observation.answer.state, trendValue: observation.trendValue, icon: trackable?.icon }
 }
 
 function activeRecords(data: HistoryData): readonly LogRecord[] { return data.logRecords.filter((record) => !record.deletedAt) }
@@ -280,12 +285,12 @@ export function buildCalendarSummaries(data: HistoryData, today = currentLocalDa
   for (const record of activeRecords(data)) {
     const coveredDates = isQuickLogRecord(record) ? eventCoveredDates(record, today) : [record.localDate]
     for (const localDate of coveredDates) {
-      const current = summaries.get(localDate) ?? { localDate, checkInStatus: null, eventCount: 0, eventIcons: [] }
+      const current = summaries.get(localDate) ?? { localDate, checkInStatus: null, eventCount: 0, activityCategoryIds: [] }
       if (record.recordKind === 'routine') current.checkInStatus = current.checkInStatus === 'completed' ? 'completed' : record.status
       if (isQuickLogRecord(record)) {
         current.eventCount += 1
-        const icon = definitions.get(record.trackableId ?? record.eventDefinitionId ?? '')?.icon
-        if (icon && current.eventIcons.length < 2) current.eventIcons = [...current.eventIcons, icon]
+        const categoryId = definitions.get(record.trackableId ?? record.eventDefinitionId ?? '')?.categoryId
+        if (categoryId && !current.activityCategoryIds.includes(categoryId)) current.activityCategoryIds = [...current.activityCategoryIds, categoryId]
       }
       summaries.set(localDate, current)
     }
@@ -298,7 +303,7 @@ export function buildDayDetail(data: HistoryData, localDate: string, today = cur
   const routineRecord = records.filter((record) => record.recordKind === 'routine').sort((a, b) => Number(b.status === 'completed') - Number(a.status === 'completed') || b.updatedAt.localeCompare(a.updatedAt))[0]
   let checkIn: HistoryDayDetail['checkIn'] = null
   if (routineRecord) {
-    const grouped = new Map<string, HistoryAnswer[]>()
+    const grouped = new Map<string, { categoryId?: string; answers: HistoryAnswer[] }>()
     const orderedItems = routineItemsForRecord(data, routineRecord)
     const itemOrder = new Map(orderedItems.flatMap((item, index) => item.target.kind === 'trackable' ? [[item.target.trackableId, index] as const] : []))
     const observations = data.observations.filter((item) => item.logRecordId === routineRecord.id && !item.deletedAt).sort((a, b) => (itemOrder.get(a.trackableId) ?? Number.MAX_SAFE_INTEGER) - (itemOrder.get(b.trackableId) ?? Number.MAX_SAFE_INTEGER) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
@@ -312,17 +317,21 @@ export function buildDayDetail(data: HistoryData, localDate: string, today = cur
         if (ownerVersion) detail = { ...detail, name: `${ownerVersion.name} · ${detail.name}` }
         if (owner) trackable = owner
       }
-      const category = trackable ? data.categories.find((item) => item.id === trackable.categoryId)?.name : undefined
-      if (detail) grouped.set(category ?? 'Other', [...(grouped.get(category ?? 'Other') ?? []), detail])
+      const categoryEntity = trackable ? data.categories.find((item) => item.id === trackable.categoryId) : undefined
+      const category = categoryEntity?.name ?? 'Other'
+      if (detail) {
+        const group = grouped.get(category) ?? { categoryId: categoryEntity?.id, answers: [] }
+        grouped.set(category, { ...group, answers: [...group.answers, detail] })
+      }
     }
-    checkIn = { record: routineRecord, groups: [...grouped].map(([category, answers]) => ({ category, answers })) }
+    checkIn = { record: routineRecord, groups: [...grouped].map(([category, group]) => ({ category, ...group })) }
   }
   const definitions = quickLogDefinitions(data)
   const events = records.filter(isQuickLogRecord).sort(compareHistoryEvents).flatMap((record): HistoryEventDetail[] => {
     const definition = definitionForRecord(data, record, definitions)
     if (!definition) return []
     const fields = data.observations.filter((item) => item.logRecordId === record.id && !item.deletedAt).flatMap((item) => answerDetail(data, item) ?? [])
-    return [{ record, definition, timing: formatEventTiming(record), fields }]
+    return [{ record, definition, category: data.categories.find((item) => item.id === definition.categoryId), timing: formatEventTiming(record), fields }]
   })
   return { localDate, checkIn, events }
 }

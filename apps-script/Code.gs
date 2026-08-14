@@ -6,7 +6,7 @@ const MAX_BATCH_SIZE = 250;
 const META_TAB = 'Meta';
 const COMMON_HEADERS = ['id', 'revision', 'remoteRevision', 'createdAt', 'updatedAt', 'deletedAt', 'originDeviceId'];
 const ENTITY_FIELDS = {
-  categories: ['name', 'sortOrder', 'active'],
+  categories: ['name', 'sortOrder', 'active', 'color'],
   trackables: ['categoryId', 'active', 'archivedAt', 'currentVersion', 'tags', 'dataRole', 'icon', 'colorRef', 'behavior', 'quickLogTimingMode', 'recordSemantics', 'quickLogEnabled', 'reminder'],
   trackableFields: ['ownerTrackableId', 'fieldTrackableId', 'fieldTrackableVersion', 'sortOrder', 'enabled', 'conditionalRule', 'completionBehavior', 'ownerTrackableVersion', 'required'],
   trackableDailyAssertions: ['date', 'trackableId', 'status', 'sourceRoutineId', 'recordedAt'],
@@ -148,7 +148,7 @@ function validateRecord_(record) {
 }
 
 function requiredField_(type, field) {
-  const optional = ['icon', 'colorRef', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'customChoiceValue', 'sourceRoutineId', 'trackableId', 'trackableVersion', 'ownerTrackableVersion', 'required', 'quickLogTimingMode', 'reminder', 'dailyCheckInReminder', 'behavior'];
+  const optional = ['icon', 'colorRef', 'color', 'description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit', 'section', 'weekdays', 'conditionalRule', 'routineId', 'eventDefinitionId', 'eventTimingKind', 'trendValue', 'customChoiceValue', 'sourceRoutineId', 'trackableId', 'trackableVersion', 'ownerTrackableVersion', 'required', 'quickLogTimingMode', 'reminder', 'dailyCheckInReminder', 'behavior'];
   return optional.indexOf(field) < 0;
 }
 

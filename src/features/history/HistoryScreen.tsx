@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  buildCalendarSummaries, buildDayDetail, buildWeekAgenda, calendarDates, calendarMetricOptions,
+  buildCalendarSummaries, buildDayDetail, calendarDates, calendarMetricOptions,
   groupHistoryResults, historySearchSuggestions, monthKey, projectCalendarMetric, searchHistory, sliceHistoryGroup,
   shiftLocalDate, shiftMonth, weekDates, type CalendarDaySummary, type HistoryAgendaDay,
   type CalendarMetricIdentity, type CalendarMetricOption, type HistoryData, type HistorySearchFilters, type HistorySearchResponse, type HistorySearchResult, type MetricDayValue,
@@ -10,6 +10,7 @@ import { localDateFor } from '../../domain/checkin/CheckInEngine.ts'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { clearCalendarFormatting } from './calendarFormatting.ts'
 import { historyEngine } from './historyEngine.ts'
+import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 
 const validDate = /^\d{4}-\d{2}-\d{2}$/
 
@@ -85,7 +86,7 @@ export function HistoryScreen() {
   const [filterDraft, setFilterDraft] = useState<SearchFilterDraft>(emptySearchFilters)
   const [searchFilters, setSearchFilters] = useState<HistorySearchFilters>({})
   const [undo, setUndo] = useState<{ recordId: string; label: string } | null>(null)
-  const [pendingRecordAnchor, setPendingRecordAnchor] = useState<string | null>(null)
+  const [shouldRevealSelectedDay, setShouldRevealSelectedDay] = useState(false)
   const [error, setError] = useState('')
 
   const load = () => void historyEngine.load().then(setData).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not load History.'))
@@ -103,7 +104,6 @@ export function HistoryScreen() {
     return projectCalendarMetric(data, metricId, today, heatmap)
   }, [data, heatmap, metricId, today])
   const dates = useMemo(() => calendarView === 'month' ? calendarDates(visibleMonth, firstDayOfWeek) : weekDates(selectedDate, firstDayOfWeek), [calendarView, firstDayOfWeek, selectedDate, visibleMonth])
-  const weekAgenda = useMemo(() => data && calendarView === 'week' ? buildWeekAgenda(data, dates, today) : [], [calendarView, data, dates, today])
   const detail = useMemo(() => data ? buildDayDetail(data, selectedDate, today) : null, [data, selectedDate, today])
   const hasSearchFilters = Boolean(searchFilters.from || searchFilters.to || searchFilters.recordType)
   const results: HistorySearchResponse | null = useMemo(() => data && (activeQuery || hasSearchFilters) ? searchHistory(data, activeQuery, today, searchFilters) : null, [activeQuery, data, hasSearchFilters, searchFilters, today])
@@ -129,32 +129,22 @@ export function HistoryScreen() {
   }, [colorOpen])
 
   useEffect(() => {
-    if (calendarView !== 'week') return
+    if (!shouldRevealSelectedDay || !detail) return
     window.requestAnimationFrame(() => {
-      const day = document.querySelector<HTMLElement>(`[data-agenda-date="${selectedDate}"]`)
-      const scroller = day?.closest<HTMLElement>('.week-agenda-scroller')
-      if (!day || !scroller) return
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      scroller.scrollTo({ left: day.offsetLeft - (scroller.clientWidth - day.clientWidth) / 2, behavior: reduced ? 'auto' : 'smooth' })
-    })
-  }, [calendarView, dates, selectedDate, weekAgenda])
-
-  useEffect(() => {
-    if (!pendingRecordAnchor || !detail) return
-    window.requestAnimationFrame(() => {
-      const target = document.getElementById(pendingRecordAnchor)
+      const target = document.getElementById('day-detail-heading')?.closest<HTMLElement>('.day-detail')
       if (!target) return
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' })
+      target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
       target.focus({ preventScroll: true })
-      setPendingRecordAnchor(null)
+      setShouldRevealSelectedDay(false)
     })
-  }, [detail, pendingRecordAnchor])
+  }, [detail, shouldRevealSelectedDay])
 
   function selectDate(localDate: string) {
     setSelectedDate(localDate)
     setVisibleMonth(monthKey(localDate))
     setSearchParams({ date: localDate }, { replace: true })
+    setShouldRevealSelectedDay(true)
   }
 
   function handleCalendarKey(event: KeyboardEvent<HTMLButtonElement>, localDate: string) {
@@ -244,17 +234,12 @@ export function HistoryScreen() {
     else selectDate(shiftLocalDate(selectedDate, amount * 7))
   }
 
-  function selectAgendaRecord(localDate: string, recordId: string) {
-    selectDate(localDate)
-    setPendingRecordAnchor(`history-record-${recordId}`)
-  }
-
   if (!data) return <section className="screen history-screen"><p className="save-status">{error || 'Opening History…'}</p></section>
   const hasRecords = data.logRecords.some((item) => !item.deletedAt)
   const calendarTitle = calendarView === 'month' ? dateLabel(`${visibleMonth}-01`, { month: 'long', year: 'numeric' }) : weekLabel(dates)
 
   return <section className="screen history-screen">
-    <header className="history-header"><div><p className="eyebrow">Your records</p><h1>History</h1><p className="screen__description">Find what you logged, revisit a day, or gently correct the past.</p></div><button type="button" className={`history-search-toggle${searchOpen ? ' is-active' : ''}`} aria-label="Search history" aria-expanded={searchOpen} aria-controls="history-search-panel" onClick={toggleSearch}><SearchIcon /></button></header>
+    <header className="history-header"><div><p className="eyebrow">Your records</p><h1>History</h1><p className="screen__description">Review your data and uncover patterns over time.</p></div></header>
     {searchOpen ? <form id="history-search-panel" className="history-search" role="search" onSubmit={(event) => { event.preventDefault(); submitSearch() }}>
       <div className="history-search-field"><label className="form-field"><span>Search History</span><input ref={searchInputRef} type="search" role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen && Boolean(suggestions.length)} aria-controls="history-search-suggestions" aria-activedescendant={activeSuggestion >= 0 ? `history-suggestion-${activeSuggestion}` : undefined} value={query} onFocus={() => setSuggestionsOpen(Boolean(query.trim()))} onChange={(event) => { setQuery(event.target.value); setSuggestionsOpen(Boolean(event.target.value.trim())); setActiveSuggestion(-1) }} onKeyDown={handleSuggestionKey} placeholder="Search events, symptoms, notes…" /></label>{suggestionsOpen && suggestions.length ? <div id="history-search-suggestions" className="history-search-suggestions" role="listbox" aria-label="History search suggestions">{suggestions.map((suggestion, index) => <button id={`history-suggestion-${index}`} type="button" role="option" aria-selected={activeSuggestion === index} className={activeSuggestion === index ? 'is-active' : ''} key={suggestion.label.toLowerCase()} onClick={() => selectSuggestion(suggestion.label)}>{suggestion.label}</button>)}</div> : null}</div>
       <button className="primary-button">Search</button>
@@ -274,12 +259,12 @@ export function HistoryScreen() {
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
 
     <section className="history-calendar-card" aria-labelledby="history-calendar-heading">
-      <div className="history-calendar-toolbar"><div className="history-calendar-title-row"><div><p className="eyebrow">Calendar</p><h2 id="history-calendar-heading">{calendarTitle}</h2></div><button ref={colorButtonRef} type="button" className={`calendar-color-toggle${colorOpen ? ' is-active' : ''}`} aria-label="Format Calendar" aria-expanded={colorOpen} aria-controls="calendar-color-panel" onClick={() => setColorOpen((open) => !open)}><PaletteIcon /></button></div><div className="history-calendar-controls"><div className="history-view-switch" aria-label="Calendar view"><button type="button" className={calendarView === 'month' ? 'is-active' : ''} aria-pressed={calendarView === 'month'} onClick={() => changeView('month')}>Month</button><button type="button" className={calendarView === 'week' ? 'is-active' : ''} aria-pressed={calendarView === 'week'} onClick={() => changeView('week')}>Week</button></div><div className="calendar-actions"><button type="button" aria-label={`Previous ${calendarView}`} onClick={() => moveCalendar(-1)}>←</button><button type="button" onClick={() => selectDate(today)}>Today</button><button type="button" aria-label={`Next ${calendarView}`} onClick={() => moveCalendar(1)}>→</button></div></div></div>
+      <div className="history-calendar-toolbar"><div className="history-calendar-title-row"><div><p className="eyebrow">Calendar</p><h2 id="history-calendar-heading">{calendarTitle}</h2></div><div className="calendar-actions"><button type="button" aria-label={`Previous ${calendarView}`} onClick={() => moveCalendar(-1)}>←</button><button type="button" onClick={() => selectDate(today)}>Today</button><button type="button" aria-label={`Next ${calendarView}`} onClick={() => moveCalendar(1)}>→</button></div></div><div className="history-calendar-controls"><div className="history-view-switch" aria-label="Calendar view"><button type="button" className={calendarView === 'month' ? 'is-active' : ''} aria-pressed={calendarView === 'month'} onClick={() => changeView('month')}>Month</button><button type="button" className={calendarView === 'week' ? 'is-active' : ''} aria-pressed={calendarView === 'week'} onClick={() => changeView('week')}>Week</button></div><div className="history-calendar-tools"><button ref={colorButtonRef} type="button" className={`calendar-color-toggle${colorOpen ? ' is-active' : ''}`} aria-label="Format Calendar" aria-expanded={colorOpen} aria-controls="calendar-color-panel" onClick={() => setColorOpen((open) => !open)}><PaletteIcon /></button><button type="button" className={`history-search-toggle${searchOpen ? ' is-active' : ''}`} aria-label="Search history" aria-expanded={searchOpen} aria-controls="history-search-panel" onClick={toggleSearch}><SearchIcon /></button></div></div></div>
       {colorOpen ? <CalendarFormattingPanel panelRef={colorPanelRef} options={filteredMetricOptions} totalOptions={metricOptions.length} selected={selectedMetric} metricId={metricId} metricQuery={metricQuery} heatmap={heatmap} valueCount={metricValues.size} onQueryChange={setMetricQuery} onSelect={(nextMetricId) => setCalendarFormatting((current) => ({ ...current, metricId: nextMetricId }))} onHeatmapChange={(nextHeatmap) => setCalendarFormatting((current) => ({ ...current, heatmap: nextHeatmap }))} onClear={() => { setCalendarFormatting(clearCalendarFormatting()); setMetricQuery('') }} /> : null}
-      {calendarView === 'month' ? <MonthCalendar dates={dates} visibleMonth={visibleMonth} selectedDate={selectedDate} firstDayOfWeek={firstDayOfWeek} summaries={summaries} metricValues={metricValues} metricName={selectedMetricName} onSelect={selectDate} onKeyDown={handleCalendarKey} title={calendarTitle} /> : <WeekAgenda days={weekAgenda} selectedDate={selectedDate} today={today} metricValues={metricValues} metricName={selectedMetricName} onSelect={selectDate} onSelectRecord={selectAgendaRecord} />}
-      {calendarView === 'month' ? <div className="calendar-legend"><span><b>✓</b> Completed</span><span><b>◔</b> Draft</span><span><b>✦</b> Events</span></div> : null}
+      {calendarView === 'month' ? <MonthCalendar dates={dates} visibleMonth={visibleMonth} selectedDate={selectedDate} firstDayOfWeek={firstDayOfWeek} summaries={summaries} metricValues={metricValues} metricName={selectedMetricName} categories={data.categories} onSelect={selectDate} onKeyDown={handleCalendarKey} title={calendarTitle} /> : <WeekCalendar dates={dates} selectedDate={selectedDate} today={today} summaries={summaries} metricValues={metricValues} metricName={selectedMetricName} categories={data.categories} onSelect={selectDate} onKeyDown={handleCalendarKey} />}
+      {calendarView === 'month' ? <div className="calendar-legend"><span><b>✓</b> Completed</span><span><b>◔</b> Draft</span><span><b>✦</b> Quick Logs</span></div> : null}
     </section>
-    {!hasRecords ? <div className="empty-state"><span aria-hidden="true">◷</span><h2>Your History starts here</h2><p>Complete a Check-In or add a Quick Log, and it will appear on this calendar.</p><Link className="primary-button button-link" to="/">Go to Home</Link></div> : detail ? <DayDetail detail={detail} onDelete={remove} /> : null}
+    {!hasRecords ? <div className="empty-state"><span aria-hidden="true">◷</span><h2>Your History starts here</h2><p>Complete a Check-In or add a Quick Log, and it will appear on this calendar.</p><Link className="primary-button button-link" to="/">Go to Home</Link></div> : detail ? <DayDetail detail={detail} today={today} onSelectDate={selectDate} onDelete={remove} /> : null}
   </section>
 }
 
@@ -309,9 +294,18 @@ function CalendarFormattingPanel({ panelRef, options, totalOptions, selected, me
   </div>
 }
 
-function MonthCalendar({ dates, visibleMonth, selectedDate, firstDayOfWeek, summaries, metricValues, metricName, onSelect, onKeyDown, title }: {
+function ActivityDots({ categoryIds, categories }: { categoryIds: readonly string[]; categories: readonly { id: string; color?: string }[] }) {
+  const byId = new Map(categories.map((category) => [category.id, category]))
+  return <span className="calendar-activity-dots" aria-hidden="true">{categoryIds.slice(0, 6).flatMap((id) => {
+    const category = byId.get(id)
+    return category ? [<i key={id} style={{ '--category-dot': effectiveCategoryColor(category) } as CSSProperties} />] : []
+  })}</span>
+}
+
+function MonthCalendar({ dates, visibleMonth, selectedDate, firstDayOfWeek, summaries, metricValues, metricName, categories, onSelect, onKeyDown, title }: {
   dates: readonly string[]; visibleMonth: string; selectedDate: string; firstDayOfWeek: number
   summaries: ReadonlyMap<string, CalendarDaySummary>; metricValues: ReadonlyMap<string, MetricDayValue>; metricName?: string
+  categories: readonly { id: string; color?: string }[]
   onSelect: (localDate: string) => void; onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, localDate: string) => void; title: string
 }) {
   return <><div className="calendar-weekdays" aria-hidden="true">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((_, index, days) => days[(index + firstDayOfWeek) % 7]).map((day) => <span key={day}>{day}</span>)}</div><div className="history-calendar-grid" role="grid" aria-label={`${title} History`}>
@@ -319,19 +313,23 @@ function MonthCalendar({ dates, visibleMonth, selectedDate, firstDayOfWeek, summ
       const summary = summaries.get(localDate); const metric = metricValues.get(localDate); const outside = monthKey(localDate) !== visibleMonth
       const accessible = [dateLabel(localDate, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }), statusLabel(summary?.checkInStatus ?? null), summary?.eventCount ? `${summary.eventCount} ${summary.eventCount === 1 ? 'event' : 'events'}` : '', metric ? `${metricName}: ${metric.display}` : ''].filter(Boolean).join(', ')
       return <button type="button" role="gridcell" data-calendar-date={localDate} aria-label={accessible} aria-selected={selectedDate === localDate} className={`calendar-day${outside ? ' calendar-day--outside' : ''}${selectedDate === localDate ? ' is-selected' : ''}${metric ? ` metric-level-${Math.max(1, Math.round(metric.level * 4))}` : ''}`} key={localDate} onClick={() => onSelect(localDate)} onKeyDown={(event) => onKeyDown(event, localDate)}>
-        <span className="calendar-day__number">{Number(localDate.slice(-2))}</span>{metric ? <span className="calendar-day__metric">{metric.display}</span> : null}<span className="calendar-day__signals"><span>{summary?.checkInStatus === 'completed' ? '✓' : summary?.checkInStatus === 'draft' ? '◔' : ''}</span><span>{summary?.eventIcons.slice(0, 2).map((icon, index) => <i key={`${icon.value}-${index}`}>{iconGlyph(icon)}</i>)}{summary && summary.eventCount > 2 ? <b>+{summary.eventCount - 2}</b> : null}</span></span>
+        <span className="calendar-day__number">{Number(localDate.slice(-2))}</span>{metric ? <span className="calendar-day__metric">{metric.display}</span> : null}<ActivityDots categoryIds={summary?.activityCategoryIds ?? []} categories={categories} />
       </button>
     })}
   </div></>
 }
 
-function WeekAgenda({ days, selectedDate, today, metricValues, metricName, onSelect, onSelectRecord }: { days: readonly HistoryAgendaDay[]; selectedDate: string; today: string; metricValues: ReadonlyMap<string, MetricDayValue>; metricName?: string; onSelect: (localDate: string) => void; onSelectRecord: (localDate: string, recordId: string) => void }) {
+export function WeekAgenda({ days, selectedDate, today, metricValues, metricName, onSelect, onSelectRecord }: { days: readonly HistoryAgendaDay[]; selectedDate: string; today: string; metricValues: ReadonlyMap<string, MetricDayValue>; metricName?: string; onSelect: (localDate: string) => void; onSelectRecord: (localDate: string, recordId: string) => void }) {
   return <div className="week-agenda-scroller" aria-label="Weekly agenda"><div className="week-agenda">
     {days.map((day) => { const metric = metricValues.get(day.localDate); return <section key={day.localDate} data-agenda-date={day.localDate} className={`week-agenda__day${day.localDate === selectedDate ? ' is-selected' : ''}${day.localDate === today ? ' is-today' : ''}${metric ? ` metric-level-${Math.max(1, Math.round(metric.level * 4))}` : ''}`} aria-labelledby={`week-day-${day.localDate}`} aria-label={metric ? `${dateLabel(day.localDate, { weekday: 'long', month: 'long', day: 'numeric' })}, ${metricName}: ${metric.display}` : undefined} onClick={() => onSelect(day.localDate)}>
       <button type="button" className="week-agenda__header" onClick={() => onSelect(day.localDate)} aria-current={day.localDate === today ? 'date' : undefined}><span>{dateLabel(day.localDate, { weekday: 'short' })}</span><strong id={`week-day-${day.localDate}`}>{Number(day.localDate.slice(-2))}</strong>{metric ? <small className="week-agenda__metric">{metric.display}</small> : null}</button>
       <div className="week-agenda__records">{day.records.length ? day.records.map((record) => record.kind === 'check-in' ? <button type="button" data-record-id={record.recordId} className="agenda-record agenda-record--checkin" key={record.recordId} onClick={(event) => { event.stopPropagation(); onSelectRecord(day.localDate, record.recordId) }}><span aria-hidden="true">{record.status === 'completed' ? '✓' : '◔'}</span><span><strong>Daily Check-In</strong><small>{record.summary}</small></span></button> : <button type="button" data-record-id={record.recordId} className="agenda-record agenda-record--event" key={record.recordId} onClick={(event) => { event.stopPropagation(); onSelectRecord(day.localDate, record.recordId) }}><span aria-hidden="true">{iconGlyph(record.icon)}</span><span><strong>{record.name}</strong>{record.timing !== 'Date only' ? <small>{record.timing}</small> : null}</span></button>) : <p className="week-agenda__empty">No records</p>}</div>
     </section>})}
   </div></div>
+}
+
+function WeekCalendar({ dates, selectedDate, today, summaries, metricValues, metricName, categories, onSelect, onKeyDown }: { dates: readonly string[]; selectedDate: string; today: string; summaries: ReadonlyMap<string, CalendarDaySummary>; metricValues: ReadonlyMap<string, MetricDayValue>; metricName?: string; categories: readonly { id: string; color?: string }[]; onSelect: (localDate: string) => void; onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, localDate: string) => void }) {
+  return <div className="week-calendar" role="grid" aria-label="Weekly calendar">{dates.map((localDate) => { const summary = summaries.get(localDate); const metric = metricValues.get(localDate); const accessible = [dateLabel(localDate, { weekday: 'long', month: 'long', day: 'numeric' }), summary?.eventCount ? `${summary.eventCount} logged item${summary.eventCount === 1 ? '' : 's'} in ${summary.activityCategoryIds.length} categor${summary.activityCategoryIds.length === 1 ? 'y' : 'ies'}` : '', metric ? `${metricName}: ${metric.display}` : ''].filter(Boolean).join(', '); return <button key={localDate} type="button" role="gridcell" data-calendar-date={localDate} aria-label={accessible} aria-selected={selectedDate === localDate} aria-current={localDate === today ? 'date' : undefined} className={`week-calendar__day${localDate === selectedDate ? ' is-selected' : ''}${localDate === today ? ' is-today' : ''}${metric ? ` metric-level-${Math.max(1, Math.round(metric.level * 4))}` : ''}`} onClick={() => onSelect(localDate)} onKeyDown={(event) => onKeyDown(event, localDate)}><span>{dateLabel(localDate, { weekday: 'short' })}</span><strong>{Number(localDate.slice(-2))}</strong>{metric ? <small>{metric.display}</small> : null}<ActivityDots categoryIds={summary?.activityCategoryIds ?? []} categories={categories} /></button> })}</div>
 }
 
 function SearchResults({ response, onSelect }: { response: HistorySearchResponse; onSelect: (localDate: string) => void }) {
@@ -357,7 +355,19 @@ function RecordAction({ label, title, danger = false, children, to, onClick }: {
   return to ? <Link className={className} to={to} aria-label={label} title={title}>{children}</Link> : <button type="button" className={className} onClick={onClick} aria-label={label} title={title}>{children}</button>
 }
 
-function DayDetail({ detail, onDelete }: { detail: ReturnType<typeof buildDayDetail>; onDelete: (recordId: string, label: string) => Promise<void> }) {
+function DayDetail({ detail, today, onSelectDate, onDelete }: { detail: ReturnType<typeof buildDayDetail>; today: string; onSelectDate: (localDate: string) => void; onDelete: (recordId: string, label: string) => Promise<void> }) {
+  const groups = useMemo(() => detail.checkIn?.groups ?? [], [detail.checkIn])
+  const [selectedCategory, setSelectedCategory] = useState(groups[0]?.category ?? '')
+  useEffect(() => { if (!groups.some((group) => group.category === selectedCategory)) setSelectedCategory(groups[0]?.category ?? '') }, [detail.localDate, groups, selectedCategory])
+  const group = groups.find((item) => item.category === selectedCategory)
+  return <section className="day-detail history-day-detail" tabIndex={-1} aria-labelledby="day-detail-heading"><div className="day-detail__heading"><div><p className="eyebrow">Selected day</p><h2 id="day-detail-heading"><span>{dateLabel(detail.localDate, { weekday: 'long' })}</span><small>{dateLabel(detail.localDate, { month: 'long', day: 'numeric', year: 'numeric' })}</small></h2></div><div className="selected-day-actions"><Link className="secondary-button button-link" to={`/quick-log?date=${detail.localDate}`}>+ Add Event</Link><div className="selected-day-navigation" aria-label="Selected day navigation"><button type="button" aria-label="Previous day" onClick={() => onSelectDate(shiftLocalDate(detail.localDate, -1))}>←</button><button type="button" onClick={() => onSelectDate(today)}>Today</button><button type="button" aria-label="Next day" onClick={() => onSelectDate(shiftLocalDate(detail.localDate, 1))}>→</button></div></div></div>
+    {!detail.checkIn && !detail.events.length ? <div className="empty-state"><span aria-hidden="true">◇</span><h2>Nothing recorded</h2><p>This day is still open for forgotten events.</p></div> : null}
+    {detail.checkIn ? <article id={`history-record-${detail.checkIn.record.id}`} className="history-record-card history-checkin-card" aria-label="Nightly Check-In"><div className="history-record__heading"><div className="history-record__title"><p className="eyebrow">Nightly Check-In</p><h3 className="sr-only">Daily Check-In</h3></div><div className="history-record__actions history-checkin-actions"><Link className="history-checkin-edit" to={`/history/check-in/${detail.localDate}`} aria-label="Edit Daily Check-In">Edit <EditIcon /></Link><RecordAction label="Delete Daily Check-In" title="Delete Check-In" danger onClick={() => void onDelete(detail.checkIn!.record.id, 'Daily Check-In')}><TrashIcon /></RecordAction></div></div>{groups.length ? <><nav className="history-category-nav" aria-label="Check-In categories">{groups.map((item) => <button type="button" key={item.category} className={item.category === selectedCategory ? 'is-selected' : ''} style={{ '--history-category-accent': effectiveCategoryColor({ id: item.categoryId ?? item.category, color: undefined }) } as CSSProperties} onClick={() => setSelectedCategory(item.category)}><span aria-hidden="true">{iconGlyph(item.answers[0]?.icon)}</span><small>{item.category}</small></button>)}</nav>{group ? <dl className="history-answer-list" style={{ '--history-category-accent': effectiveCategoryColor({ id: group.categoryId ?? group.category, color: undefined }) } as CSSProperties}>{group.answers.map((answer) => <div key={answer.observationId} className={answer.state === 'answered' ? '' : 'is-missing'}><span className="history-answer-list__icon" aria-hidden="true">{iconGlyph(answer.icon)}</span><dt>{answer.name}</dt><dd>{answer.value}{answer.trendValue ? <small> · {answer.trendValue}</small> : null}</dd><Link className="history-answer-edit" to={`/history/check-in/${detail.localDate}`} aria-label={`Edit ${answer.name}`}><EditIcon /></Link></div>)}</dl> : null}</> : <p className="empty-copy">No answers recorded yet.</p>}</article> : null}
+    {detail.events.length ? <section className="history-events"><div className="section-heading history-events__heading"><div><h3>Quick Logs</h3><span>{detail.events.length}</span></div></div>{detail.events.map((event) => <article id={`history-record-${event.record.id}`} className="history-record-card history-event-card" style={{ '--history-category-accent': effectiveCategoryColor(event.category ?? { id: event.definition.categoryId, color: undefined }) } as CSSProperties} key={event.record.id}><div className="history-record__heading"><div className="history-event__identity"><span aria-hidden="true">{iconGlyph(event.definition.icon)}</span><div><h3>{event.definition.name}</h3>{event.timing && event.record.startTimePrecision !== 'day' ? <p>{event.timing}</p> : event.record.eventTimingKind === 'duration' ? <p>{event.timing}</p> : null}</div></div><div className="history-record__actions"><RecordAction label={`Edit ${event.definition.name}`} title={`Edit ${event.definition.name}`} to={`/history/quick-log/${event.record.id}/edit`}><EditIcon /></RecordAction><RecordAction label={`Delete ${event.definition.name}`} title={`Delete ${event.definition.name}`} danger onClick={() => void onDelete(event.record.id, event.definition.name)}><TrashIcon /></RecordAction></div></div>{event.fields.length ? <dl className="event-field-summary">{event.fields.map((field) => <div key={field.observationId}><dt>{field.name}</dt><dd>{field.value}</dd></div>)}</dl> : null}</article>)}</section> : null}
+  </section>
+}
+
+export function LegacyDayDetail({ detail, onDelete }: { detail: ReturnType<typeof buildDayDetail>; onDelete: (recordId: string, label: string) => Promise<void> }) {
   return <section className="day-detail" aria-labelledby="day-detail-heading"><div className="day-detail__heading"><div><p className="eyebrow">Selected day</p><h2 id="day-detail-heading">{dateLabel(detail.localDate, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</h2></div><Link className="secondary-button button-link" to={`/quick-log?date=${detail.localDate}`}>+ Quick Log</Link></div>
     {!detail.checkIn && !detail.events.length ? <div className="empty-state"><span aria-hidden="true">◇</span><h2>Nothing recorded</h2><p>This day is still open for forgotten events.</p></div> : null}
     {detail.checkIn ? <article id={`history-record-${detail.checkIn.record.id}`} tabIndex={-1} className="history-record-card history-checkin-card"><div className="history-record__heading"><div className="history-record__title"><h3>Daily Check-In</h3><span className={`status-chip status-chip--${detail.checkIn.record.status}`}>{detail.checkIn.record.status === 'completed' ? '✓ Completed' : '◔ Draft'}</span></div><div className="history-record__actions"><RecordAction label="Edit Daily Check-In" title="Edit Check-In" to={`/history/check-in/${detail.localDate}`}><EditIcon /></RecordAction><RecordAction label="Delete Daily Check-In" title="Delete Check-In" danger onClick={() => void onDelete(detail.checkIn!.record.id, 'Daily Check-In')}><TrashIcon /></RecordAction></div></div>

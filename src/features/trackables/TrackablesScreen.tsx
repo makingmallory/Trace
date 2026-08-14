@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { TrackableDetails, TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
@@ -8,6 +8,7 @@ import { trackableEngine } from './trackableEngine.ts'
 import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, inputTypes, isPresetAlreadyActive } from './trackableUi.ts'
 import { ActionIcon } from '../../components/ActionIcons.tsx'
 import { isQuickLogEligible, recordSemanticsFor } from '../../domain/trackables/trackableSemantics.ts'
+import { categoryColorSuggestions, effectiveCategoryColor } from '../../themes/categoryColors.ts'
 
 function useTrackableLibrary() {
   const [library, setLibrary] = useState<TrackableLibrary | null>(null)
@@ -26,24 +27,43 @@ function Loading({ error }: { error: string }) {
 }
 
 function typeLabel(details: TrackableDetails): string {
+  if (details.version.inputType === 'scale' && details.version.scaleMin !== undefined && details.version.scaleMax !== undefined) {
+    return `Scale (${details.version.scaleMin}\u2013${details.version.scaleMax})`
+  }
   return inputTypes.find((type) => type.value === details.version.inputType)?.label ?? details.version.inputType
 }
 
 function TrackableCard({ details, onArchive }: { details: TrackableDetails; onArchive: () => void }) {
-  return <article className="collection-card">
+  return <article className="collection-card collection-row">
     <span className="collection-card__icon emoji-icon" aria-hidden="true">{iconGlyph(details.trackable.icon)}</span>
-    <div className="collection-card__copy"><h3>{details.version.name}</h3><p>{recordSemanticsFor(details.trackable) === 'occurrence' ? `Occurrence${isQuickLogEligible(details.trackable) ? ' · Quick Log' : ''}` : `Daily Value · ${typeLabel(details)}`}{details.version.unit ? ` · ${details.version.unit}` : ''}</p></div>
-    <details className="overflow-menu"><summary aria-label={`Actions for ${details.version.name}`}>•••</summary><div className="overflow-menu__panel"><Link to={`/trackables/edit/${details.trackable.id}`}>Edit</Link>{isQuickLogEligible(details.trackable) ? <Link to={`/trackables/quick-log/${details.trackable.id}`}>Configure Details</Link> : null}<button type="button" onClick={onArchive}>Archive</button></div></details>
+    <div className="collection-card__copy"><h3>{details.version.name}</h3><p>{recordSemanticsFor(details.trackable) === 'occurrence' ? `Occurrence${isQuickLogEligible(details.trackable) ? ' · Quick Log' : ''}` : typeLabel(details)}{details.version.unit ? ` · ${details.version.unit}` : ''}</p></div>
+    <details className="overflow-menu"><summary aria-label={`Actions for ${details.version.name}`}><span aria-hidden="true">•••</span></summary><div className="overflow-menu__panel"><Link to={`/trackables/edit/${details.trackable.id}`}>Edit</Link>{isQuickLogEligible(details.trackable) ? <Link to={`/trackables/quick-log/${details.trackable.id}`}>Configure Details</Link> : null}<button type="button" onClick={onArchive}>Archive</button></div></details>
   </article>
+}
+
+function categoryAccentStyle(category: { id: string; color?: string }): CSSProperties {
+  return { '--category-accent': effectiveCategoryColor(category) } as CSSProperties
 }
 
 export function TrackablesScreen() {
   const { library, error, setError, refresh } = useTrackableLibrary()
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
+  const [categoryId, setCategoryId] = useState('all')
+  const [openCategories, setOpenCategories] = useState<ReadonlySet<string> | null>(null)
   if (!library) return <Loading error={error} />
-  const groups = filterOwnedTrackableGroups(library.active, library.categories, search)
+  const groups = filterOwnedTrackableGroups(library.active, library.categories, search, categoryId)
   const searching = Boolean(search.trim())
+  const defaultOpenId = filterOwnedTrackableGroups(library.active, library.categories, '', 'all')[0]?.category.id
+
+  function toggleCategory(id: string) {
+    setOpenCategories((current) => {
+      const next = new Set(current ?? (defaultOpenId ? [defaultOpenId] : []))
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   async function archive(details: TrackableDetails) {
     setError(''); setNotice('')
@@ -51,22 +71,34 @@ export function TrackablesScreen() {
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not archive this Trackable.') }
   }
 
-  return <section className="screen trackables-screen">
-    <header className="collection-hero"><p className="eyebrow">Your collection</p><div className="collection-hero__title-row"><h1>Trackables</h1><div className="collection-hero__actions"><Link className="bubble-action" to="/trackables/add" aria-label="Add Trackable" title="Add Trackable"><ActionIcon name="add" /></Link><Link className="bubble-action" to="/trackables/manage" aria-label="Manage Trackables" title="Manage Trackables"><ActionIcon name="settings" /></Link></div></div><p className="screen__description">Little pieces of your life, ready whenever you want to check in.</p><p className="collection-count"><strong>{library.active.length}</strong> active Trackable{library.active.length === 1 ? '' : 's'}</p></header>
-    {library.active.length > 0 ? <label className="form-field owned-trackables-search"><span>Search My Trackables</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Try acne, energy, Pilates…" /></label> : null}
+  return <section className="screen trackables-screen trackables-screen--collection">
+    <header className="collection-hero"><p className="eyebrow">Your collection</p><div className="collection-hero__title-row"><div><h1>Trackables</h1><p className="screen__description">Little pieces of your life, ready whenever you want to check in.</p><p className="collection-count"><strong>{library.active.length}</strong> active Trackable{library.active.length === 1 ? '' : 's'}</p></div><div className="collection-hero__actions"><Link className="bubble-action" to="/trackables/add" aria-label="Add Trackable" title="Add Trackable"><ActionIcon name="add" /></Link><Link className="bubble-action" to="/trackables/manage" aria-label="Manage Trackables" title="Manage Trackables"><ActionIcon name="settings" /></Link></div></div></header>
+    {library.active.length > 0 ? <div className="owned-trackables-controls"><label className="owned-trackables-search"><span className="sr-only">Search My Trackables</span><span className="search-control"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search trackables…" /></span></label><label className="category-filter"><span className="sr-only">Filter by category</span><select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="all">All Categories</option>{library.categories.filter((category) => category.active).map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label></div> : null}
     {notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}
-    {groups.length === 0 ? searching ? <div className="empty-state"><span>◇</span><h2>No Trackables Found</h2><p>Try a different name or category.</p></div> : <div className="empty-state"><span>✦</span><h2>Your collection is ready to grow</h2><p>Start with the Trackable Library, a Starter Pack, or something completely your own.</p><Link className="primary-button button-link" to="/trackables/add">Add your first Trackable</Link></div> : <div className="collection-groups">{groups.map(({ category, items }) => <section className="collection-group" key={category.id}><div className="collection-group__heading"><h2>{category.name}</h2><span>{items.length}</span></div><div className="collection-grid">{items.map((details) => <TrackableCard key={details.trackable.id} details={details} onArchive={() => void archive(details)} />)}</div></section>)}</div>}
+      {groups.length === 0 ? (searching || categoryId !== 'all') ? <div className="empty-state"><span>◇</span><h2>No Trackables Found</h2><p>Try a different name or category.</p></div> : <div className="empty-state"><span>✦</span><h2>Your collection is ready to grow</h2><p>Start with the Trackable Library, a Starter Pack, or something completely your own.</p><Link className="primary-button button-link" to="/trackables/add">Add your first Trackable</Link></div> : <div className="collection-groups">{groups.map(({ category, items }) => { const isOpen = searching || categoryId !== 'all' || (openCategories ? openCategories.has(category.id) : category.id === defaultOpenId); return <section className={`collection-group${isOpen ? ' is-open' : ''}`} style={categoryAccentStyle(category)} key={category.id}><button className="collection-group__heading" type="button" aria-expanded={isOpen} aria-controls={`category-${category.id}`} onClick={() => toggleCategory(category.id)}><span className="collection-group__title"><strong>{category.name}</strong><span>{items.length}</span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9.5 5 5 5-5" /></svg></button>{isOpen ? <div className="collection-grid" id={`category-${category.id}`}>{items.map((details) => <TrackableCard key={details.trackable.id} details={details} onArchive={() => void archive(details)} />)}</div> : null}</section> })}</div>}
   </section>
 }
 
 const addChoices = [
-  { to: '/trackables/library', icon: '✦', title: 'Trackable Library', description: 'Browse ready-made Trackables and add the ones you want.' },
-  { to: '/trackables/packs', icon: '▦', title: 'Starter Packs', description: 'Start with a curated collection and customize what gets added.' },
-  { to: '/trackables/custom', icon: '+', title: 'Create Custom', description: 'Build a Trackable from scratch.' },
+  { to: '/trackables/library', icon: 'library', title: 'Trackable Library', description: 'Browse ready-made Trackables and add the ones you want.' },
+  { to: '/trackables/packs', icon: 'packs', title: 'Starter Packs', description: 'Start with a curated collection and customize what gets added.' },
+  { to: '/trackables/custom', icon: 'custom', title: 'Create Custom', description: 'Build a Trackable from scratch.' },
 ] as const
 
+function AddChoiceIcon({ name }: { name: typeof addChoices[number]['icon'] }) {
+  const paths = {
+    library: <path d="M12 2c.5 5.8 4.2 9.5 10 10-5.8.5-9.5 4.2-10 10-.5-5.8-4.2-9.5-10-10 5.8-.5 9.5-4.2 10-10Z" />,
+    packs: <><path d="M4 4h16v16H4z" /><path d="M4 10h16M10 4v16M15 4v16" /></>,
+    custom: <path d="M12 5v14M5 12h14" />,
+  }
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
+}
+
 export function AddTrackableScreen() {
-  return <Page eyebrow="Add Trackable" title="Choose your starting point" description="Browse one ready-made Trackable, choose a collection, or make something unique."><div className="choice-grid">{addChoices.map((choice) => <Link className="choice-card" to={choice.to} key={choice.to}><span aria-hidden="true">{choice.icon}</span><div><h2>{choice.title}</h2><p>{choice.description}</p></div><b aria-hidden="true">→</b></Link>)}</div></Page>
+  return <section className="screen trackables-screen add-trackable-screen">
+    <header className="add-trackable-screen__header"><Link className="add-trackable-screen__back" to="/trackables"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7" /></svg><span>Add Trackable</span></Link><h1>Choose your<br />starting point</h1><p className="screen__description">Browse one ready-made Trackable, choose a collection, or make something unique.</p></header>
+    <div className="choice-grid add-trackable-choices">{addChoices.map((choice) => <Link className="choice-card" to={choice.to} key={choice.to}><span className="choice-card__icon" aria-hidden="true"><AddChoiceIcon name={choice.icon} /></span><div><h2>{choice.title}</h2><p>{choice.description}</p></div><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg></b></Link>)}</div>
+  </section>
 }
 
 export function PresetCard({ preset, added, busy, onAdd }: { preset: TrackablePreset; added: boolean; busy: boolean; onAdd: () => void }) {
@@ -161,5 +193,5 @@ export function CategoriesScreen() {
   if (!library) return <Loading error={error} />
   async function action(task: () => Promise<unknown>, success: string) { setError(''); setNotice(''); try { await task(); await refresh(); setNotice(success) } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update categories.') } }
   function create(event: FormEvent) { event.preventDefault(); void action(() => trackableEngine.createCategory(newCategory), 'Category created.').then(() => setNewCategory('')) }
-  return <Page eyebrow="Manage" title="Categories" description="Arrange the shelves that hold your Trackables." backTo="/trackables/manage">{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}<section className="category-manager"><form className="category-create" onSubmit={create}><label className="form-field"><span>New Category</span><input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} placeholder="Category name" required /></label><button className="primary-button">Add</button></form><ol className="category-list">{library.categories.map((category, index) => <li key={category.id}><span className="drag-hint" aria-hidden="true">⋮⋮</span><div className="management-row__copy"><strong>{category.name}</strong><small>{category.active ? 'Visible' : 'Hidden'}</small></div><div className="category-actions"><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Up`} title="Move Up" disabled={index === 0} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, -1), 'Categories reordered.')}><ActionIcon name="moveUp" /></button><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Down`} title="Move Down" disabled={index === library.categories.length - 1} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, 1), 'Categories reordered.')}><ActionIcon name="moveDown" /></button><button type="button" className="management-icon-button" aria-label={`Rename ${category.name}`} title="Rename" onClick={() => { const name = window.prompt('Rename category', category.name); if (name !== null) void action(() => trackableEngine.renameCategory(category.id, name), 'Category renamed.') }}><ActionIcon name="edit" /></button><button type="button" className="management-icon-button" aria-label={`${category.active ? 'Hide' : 'Show'} ${category.name}`} title={category.active ? 'Hide' : 'Show'} onClick={() => void action(() => trackableEngine.setCategoryActive(category.id, !category.active), category.active ? 'Category hidden.' : 'Category shown.')}><ActionIcon name={category.active ? 'hide' : 'show'} /></button></div></li>)}</ol></section></Page>
+  return <Page eyebrow="Manage" title="Categories" description="Arrange the shelves that hold your Trackables." backTo="/trackables/manage">{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}<section className="category-manager"><form className="category-create" onSubmit={create}><label className="form-field"><span>New Category</span><input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} placeholder="Category name" required /></label><button className="primary-button">Add</button></form><ol className="category-list">{library.categories.map((category, index) => <li key={category.id} style={categoryAccentStyle(category)}><span className="drag-hint" aria-hidden="true">⋮⋮</span><div className="management-row__copy"><strong><i className="category-color-preview" aria-hidden="true" />{category.name}</strong><small>{category.active ? 'Visible' : 'Hidden'}</small></div><details className="category-color-picker"><summary aria-label={`Set color for ${category.name}`}>Color</summary><div><span className="category-color-suggestions">{categoryColorSuggestions.map((color) => <button key={color} type="button" className={effectiveCategoryColor(category) === color ? 'is-selected' : ''} style={{ '--swatch-color': color } as CSSProperties} aria-label={`Use ${color} for ${category.name}`} onClick={() => void action(() => trackableEngine.setCategoryColor(category.id, color), 'Category color updated.')} />)}</span><label>Custom<input type="color" value={effectiveCategoryColor(category)} onChange={(event) => void action(() => trackableEngine.setCategoryColor(category.id, event.target.value), 'Category color updated.')} /></label><button type="button" className="text-button" disabled={!category.color} onClick={() => void action(() => trackableEngine.setCategoryColor(category.id, undefined), 'Automatic category color restored.')}>Automatic</button></div></details><div className="category-actions"><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Up`} title="Move Up" disabled={index === 0} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, -1), 'Categories reordered.')}><ActionIcon name="moveUp" /></button><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Down`} title="Move Down" disabled={index === library.categories.length - 1} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, 1), 'Categories reordered.')}><ActionIcon name="moveDown" /></button><button type="button" className="management-icon-button" aria-label={`Rename ${category.name}`} title="Rename" onClick={() => { const name = window.prompt('Rename category', category.name); if (name !== null) void action(() => trackableEngine.renameCategory(category.id, name), 'Category renamed.') }}><ActionIcon name="edit" /></button><button type="button" className="management-icon-button" aria-label={`${category.active ? 'Hide' : 'Show'} ${category.name}`} title={category.active ? 'Hide' : 'Show'} onClick={() => void action(() => trackableEngine.setCategoryActive(category.id, !category.active), category.active ? 'Category hidden.' : 'Category shown.')}><ActionIcon name={category.active ? 'hide' : 'show'} /></button></div></li>)}</ol></section></Page>
 }
