@@ -9,6 +9,7 @@ import type {
   Trackable, TrackableOption, TrackableVersion,
 } from '../models/index.ts'
 import { isQuickLogEligible } from '../trackables/trackableSemantics.ts'
+import { eventAppliesOnDate } from './eventDateRange.ts'
 
 export interface EventDefinitionDraft {
   name: string
@@ -96,12 +97,9 @@ function validateEndpoint(label: string, endpoint: EventEndpointDraft, issues: s
   if (endpoint.precision !== 'timeOfDay' && endpoint.timeOfDay) issues.push(`${label} time-of-day bucket is only valid for Time of day.`)
 }
 
-function prepareEventTiming(details: EventDefinitionDetails, timing: EventTimingDraft) {
+function prepareEventTiming(_details: EventDefinitionDetails, timing: EventTimingDraft) {
   const issues: string[] = []
   validateEndpoint('Start', timing.start, issues)
-  if (details.definition.timingMode === 'dayOnly' && (timing.start.precision !== 'day' || timing.occurrence !== 'point')) issues.push('Day-only events use a known date without a clock time.')
-  if (details.definition.timingMode === 'point' && timing.occurrence !== 'point') issues.push('This event type is point-in-time.')
-  if (details.definition.timingMode === 'duration' && timing.occurrence !== 'duration') issues.push('This event type records a duration.')
   if (timing.occurrence === 'point' && (timing.end || timing.ongoing)) issues.push('Point events cannot have an end.')
   if (timing.occurrence === 'duration' && !timing.ongoing && !timing.end) issues.push('Choose an end or mark this event ongoing.')
   if (timing.occurrence === 'duration' && !timing.ongoing && timing.end) validateEndpoint('End', timing.end, issues)
@@ -391,7 +389,7 @@ export class EventEngine {
 
   async getEventsForDate(localDate: string): Promise<readonly { record: LogRecord; definition: EventDefinition }[]> {
     const library = await this.getLibrary(); const definitions = new Map(library.active.concat(library.archived).map((item) => [item.definition.id, item.definition]))
-    return (await this.repository.getAll('logRecords')).filter((item) => ['quick_log', 'event'].includes(item.recordKind) && item.localDate === localDate && !item.deletedAt)
+    return (await this.repository.getAll('logRecords')).filter((item) => ['quick_log', 'event'].includes(item.recordKind) && eventAppliesOnDate(item, localDate) && !item.deletedAt)
       .flatMap((record) => { const definition = definitions.get(record.trackableId ?? record.eventDefinitionId ?? ''); return definition ? [{ record, definition }] : [] })
       .sort((a, b) => (a.record.startTime ?? '').localeCompare(b.record.startTime ?? ''))
   }

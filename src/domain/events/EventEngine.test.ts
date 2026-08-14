@@ -106,6 +106,15 @@ describe('EventEngine logging', () => {
     expect(mixed.record).toMatchObject({ startTimePrecision: 'timeOfDay', startTimeOfDay: 'morning', endTimePrecision: 'exact' })
   })
 
+  it('returns one ranged Quick Log for every inclusive covered date', async () => {
+    const { events } = await setup(new InMemoryDataRepository())
+    const logged = await events.logEvent({ eventDefinitionId: 'preset.event.travel', timing: { occurrence: 'duration', start: { localDate: '2026-08-03', precision: 'day' }, end: { localDate: '2026-08-17', precision: 'day' }, timezone: null }, answers: [] })
+    await expect(events.getEventsForDate('2026-08-03')).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ record: expect.objectContaining({ id: logged.record.id }) })]))
+    await expect(events.getEventsForDate('2026-08-10')).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ record: expect.objectContaining({ id: logged.record.id }) })]))
+    await expect(events.getEventsForDate('2026-08-17')).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ record: expect.objectContaining({ id: logged.record.id }) })]))
+    await expect(events.getEventsForDate('2026-08-18')).resolves.toEqual([])
+  })
+
   it('preserves an ongoing duration with no invented end', async () => {
     const { events } = await setup(new InMemoryDataRepository())
     const ongoing = await events.logEvent({ eventDefinitionId: 'preset.event.iron-infusion', timing: { occurrence: 'duration', start: { localDate: '2026-08-09', precision: 'timeOfDay', timeOfDay: 'morning' }, ongoing: true, timezone: null }, answers: [] })

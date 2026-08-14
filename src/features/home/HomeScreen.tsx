@@ -12,15 +12,28 @@ const stateCopy: Record<TodayState, string> = {
   completed: 'Completed · Edit',
 }
 
+function actionLabel(state: TodayState, configured: boolean) {
+  if (!configured) return 'Set up'
+  if (state === 'draft') return 'Resume'
+  if (state === 'completed') return 'Edit'
+  return 'Start'
+}
+
+function greeting() {
+  const hour = new Date().getHours()
+  return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+}
+
 export function HomeScreen() {
   const [state, setState] = useState<TodayState>('not_started')
   const [configured, setConfigured] = useState<boolean | null>(null)
   useEffect(() => { void Promise.all([checkInEngine.getTodayState(), checkInEngine.getConfiguration()]).then(([todayState, configuration]) => { setState(todayState); setConfigured(Boolean(configuration.routine && configuration.questions.length)) }) }, [])
-  return <section className="screen home-screen"><header className="screen__heading"><p className="eyebrow">Your day, at a glance</p><h1>Welcome to Trace</h1><p className="screen__description">A calm home for the patterns that matter to you.</p></header><div className="home-foundation">
+  const checkInPath = configured ? '/check-in' : '/settings/nightly-check-in'
+  return <section className="screen home-screen"><header className="screen__heading"><h1>{greeting()}</h1><p className="screen__description">{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())}</p></header><div className="home-foundation">
     <div className="planned-actions">
-      {configured ? <Link className="planned-action home-action" to="/check-in"><span aria-hidden="true">✓</span><div><strong>Daily Check-In</strong><small>{stateCopy[state]}</small></div><b aria-hidden="true">→</b></Link> : <Link className="planned-action home-action" to="/settings/nightly-check-in"><span aria-hidden="true">✓</span><div><strong>Set up Daily Check-In</strong><small>Choose your daily questions</small></div><b aria-hidden="true">→</b></Link>}
-      <Link className="planned-action home-action" to="/quick-log"><span aria-hidden="true">＋</span><div><strong>Quick Log</strong><small>Log it when it happens</small></div><b aria-hidden="true">→</b></Link>
+      {configured ? <Link className="planned-action home-action home-action--checkin" to="/check-in"><span aria-hidden="true">✓</span><div><strong>Check in</strong><small>Daily trackables</small></div><b aria-hidden="true">›</b></Link> : <Link className="planned-action home-action home-action--checkin" to="/settings/nightly-check-in"><span aria-hidden="true">✓</span><div><strong>Set up Check-In</strong><small>Choose daily trackables</small></div><b aria-hidden="true">›</b></Link>}
+      <Link className="planned-action home-action home-action--quick-log" to="/quick-log"><span aria-hidden="true">＋</span><div><strong>Quick Log</strong><small>Anything else</small></div><b aria-hidden="true">›</b></Link>
     </div>
-    <section className="today-card"><p className="eyebrow">Today</p><Link className="today-checkin-link" to={configured ? '/check-in' : '/settings/nightly-check-in'}><span className={`status-dot status-dot--${state}`} aria-hidden="true" /><strong>Daily Check-In</strong><span>{configured ? stateCopy[state] : 'Needs Setup'}</span></Link><TodayEvents localDate={localDateFor(new Date())} /></section>
+    <section className="today-card"><h2>Today</h2><div className="today-checkin-row"><Link className="today-checkin-link" to={checkInPath}><span className={`status-dot status-dot--${state}`} aria-hidden="true" /><span><strong>Daily Check-In</strong><small>{configured ? stateCopy[state] : 'Needs Setup'}</small></span></Link><Link className="today-checkin-action" to={checkInPath}>{actionLabel(state, Boolean(configured))}</Link></div><TodayEvents localDate={localDateFor(new Date())} /></section>
   </div></section>
 }

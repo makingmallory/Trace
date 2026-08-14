@@ -19,6 +19,7 @@ import type {
 } from '../models/index.ts'
 import { buildEffectiveRuleAnswers, evaluateConditionalRule, type RuleAnswer } from './conditionalRules.ts'
 import { isOccurrenceTrackable } from '../trackables/trackableSemantics.ts'
+import { eventAppliesOnDate } from '../events/eventDateRange.ts'
 import { deduplicateObservationSelections } from '../../data/migrations/deduplicateObservationSelections.ts'
 
 export interface RoutineQuestion {
@@ -288,7 +289,7 @@ export class CheckInEngine {
   private async snapshot(routine: Routine, record: LogRecord, questions: readonly RoutineQuestion[]): Promise<CheckInSnapshot> {
     const storedObservations = (await this.repository.getAll('observations')).filter((item) => item.logRecordId === record.id && !item.deletedAt)
     const [allRecords, assertions] = await Promise.all([this.repository.getAll('logRecords'), this.repository.getAll('trackableDailyAssertions')])
-    const quickRecords = allRecords.filter((item) => item.recordKind === 'quick_log' && item.localDate === record.localDate && !item.deletedAt && item.trackableId)
+    const quickRecords = allRecords.filter((item) => item.recordKind === 'quick_log' && eventAppliesOnDate(item, record.localDate, localDateFor(this.now())) && !item.deletedAt && item.trackableId)
     const quickQuestions = questions.filter((question) => isOccurrenceTrackable(question.trackable))
     const synthesized = quickQuestions.flatMap((question): Observation[] => {
       const occurrences = quickRecords.filter((item) => item.trackableId === question.trackable.id)
@@ -444,7 +445,7 @@ export class CheckInEngine {
   async saveOccurrenceAnswer(record: LogRecord, trackable: Trackable, saved: SavedAnswer, removeExisting: boolean): Promise<CheckInSnapshot> {
     if (saved.answer.state !== 'answered' || saved.answer.value.kind !== 'boolean') throw new Error('Occurrence routine questions use Yes or No.')
     const timestamp = this.timestamp()
-    const records = (await this.repository.getAll('logRecords')).filter((item) => item.recordKind === 'quick_log' && item.trackableId === trackable.id && item.localDate === record.localDate && !item.deletedAt)
+    const records = (await this.repository.getAll('logRecords')).filter((item) => item.recordKind === 'quick_log' && item.trackableId === trackable.id && eventAppliesOnDate(item, record.localDate, localDateFor(this.now())) && !item.deletedAt)
     const assertions = await this.repository.getAll('trackableDailyAssertions')
     const existingAssertion = assertions.find((item) => item.trackableId === trackable.id && item.date === record.localDate)
     const writes: import('../../data/repository/DataRepository.ts').RepositoryWrite[] = []
@@ -516,7 +517,7 @@ export class CheckInEngine {
         const defaultsNo = observation?.answer.state === 'answered'
           && observation.answer.value.kind === 'boolean'
           && observation.answer.value.value === false
-        const hasOccurrence = records.some((item) => item.recordKind === 'quick_log' && item.trackableId === question.trackable.id && item.localDate === record.localDate && !item.deletedAt)
+        const hasOccurrence = records.some((item) => item.recordKind === 'quick_log' && item.trackableId === question.trackable.id && eventAppliesOnDate(item, record.localDate, localDateFor(this.now())) && !item.deletedAt)
         const hasAssertion = assertions.some((item) => item.trackableId === question.trackable.id && item.date === record.localDate && !item.deletedAt)
         return defaultsNo && !hasOccurrence && !hasAssertion
       }).map((question): TrackableDailyAssertion => ({

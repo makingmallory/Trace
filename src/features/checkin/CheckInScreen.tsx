@@ -7,6 +7,7 @@ import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { shouldReturnHomeAfterCompletion } from './checkInNavigation.ts'
 import { evaluateConditionalRule } from '../../domain/checkin/conditionalRules.ts'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
+import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
 
 function displayDate(localDate: string): string {
   const date = new Date(`${localDate}T12:00:00`)
@@ -93,7 +94,7 @@ export function CheckInScreen() {
     }
   }
 
-  if (error && !snapshot) return <section className="screen"><header className="subpage-header"><Link className="back-link" to={historical ? `/history?date=${localDate}` : '/'}>← {historical ? 'History' : 'Home'}</Link><p className="eyebrow">Daily Check-In</p><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Daily Check-In</Link></section>
+  if (error && !snapshot) return <section className="screen"><header className="subpage-header"><InlineBackHeader to={historical ? `/history?date=${localDate}` : '/'} label="Daily Check-In" ariaLabel={`Back to ${historical ? 'History' : 'Home'}`} /><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Daily Check-In</Link></section>
   if (!snapshot) return <div className="screen trackables-loading">Opening today’s Check-In…</div>
 
   const completed = snapshot.record.status === 'completed'

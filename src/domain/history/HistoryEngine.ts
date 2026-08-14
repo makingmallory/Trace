@@ -1,6 +1,7 @@
 import type { DataRepository } from '../../data/repository/DataRepository.ts'
 import { buildRuleAnswers, evaluateConditionalRule } from '../checkin/conditionalRules.ts'
 import { formatEventTiming, timeOfDayDefinitions } from '../events/eventTiming.ts'
+import { eventCoveredDates, isQuickLogRecord } from '../events/eventDateRange.ts'
 import type {
   Category, EventDefinition, IconReference, LogRecord, Observation, ObservationOptionSelection, Routine, RoutineItem, Settings,
   Trackable, TrackableOption, TrackableVersion,
@@ -180,15 +181,7 @@ export function shiftLocalDate(localDate: string, days: number): string {
   return dateFromNumber(localDateNumber(localDate) + days * 86_400_000)
 }
 
-export function eventCoveredDates(record: LogRecord, today = currentLocalDate()): readonly string[] {
-  if (!isQuickLogRecord(record) || record.eventTimingKind !== 'duration') return [record.localDate]
-  const end = record.ongoing ? today : record.endLocalDate ?? record.localDate
-  if (end < record.localDate) return [record.localDate]
-  const startValue = localDateNumber(record.localDate); const endValue = localDateNumber(end)
-  return Array.from({ length: Math.floor((endValue - startValue) / 86_400_000) + 1 }, (_, index) => dateFromNumber(startValue + index * 86_400_000))
-}
-
-function isQuickLogRecord(record: LogRecord): boolean { return record.recordKind === 'quick_log' || record.recordKind === 'event' }
+export { eventCoveredDates }
 
 function quickLogDefinitions(data: HistoryData): Map<string, EventDefinition> {
   const definitions = new Map(data.eventDefinitions.map((item) => [item.id, item]))

@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import type { DataRole, EventTimingMode, InputType, ObservationAnswer, ValueDirection } from '../../domain/models/index.ts'
 import { TrackableValidationError, type TrackableDetails, type TrackableDraft, type TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
-import { builtInIcons } from '../../presets/iconLibrary.ts'
+import { builtInIcons, iconGlyph } from '../../presets/iconLibrary.ts'
 import { trackableEngine } from './trackableEngine.ts'
 import { inputTypes } from './trackableUi.ts'
+import { TraceEmojiPicker } from './TraceEmojiPicker.tsx'
+import { firstGrapheme } from './emojiInput.ts'
 
 const roleLabels: Record<DataRole, string> = {
   symptom: 'Symptom', treatment: 'Treatment', behavior: 'Behavior', exposure: 'Exposure', context: 'Context',
@@ -66,6 +68,11 @@ function detailsDraft(details: TrackableDetails): TrackableDraft {
   }
 }
 
+function IconField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false)
+  return <div className="form-field icon-field"><span>Icon</span><div className="icon-field__control"><input aria-label="Icon" value={value} onChange={(event) => onChange(firstGrapheme(event.target.value))} placeholder="🙂" /><button type="button" aria-label="Choose emoji" aria-expanded={open} onClick={() => setOpen((current) => !current)}>☺</button></div>{open ? <TraceEmojiPicker onSelect={(emoji) => { onChange(firstGrapheme(emoji)); setOpen(false) }} /> : null}</div>
+}
+
 export function TrackableEditor({ details, library, onCancel, onSaved }: { details?: TrackableDetails; library: TrackableLibrary; onCancel: () => void; onSaved: () => void }) {
   const [draft, setDraft] = useState<TrackableDraft>(() => details ? detailsDraft(details) : initialDraft(library.categories.find((category) => category.active)?.id ?? library.categories[0]?.id ?? ''))
   const [optionsText, setOptionsText] = useState(() => (draft.options ?? []).map((option) => option.label).join('\n'))
@@ -116,8 +123,10 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
     setDraft({ ...draft, fields: (draft.fields ?? []).map((field) => field.trackableId === trackableId ? { ...field, ...changes } : field) })
   }
 
+
   return <form className="trackable-form trackable-editor-form" onSubmit={submit}>
     <label className="form-field"><span>Name</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Morning energy" maxLength={100} required autoFocus={!details} /></label>
+    <IconField value={draft.icon?.type === 'emoji' ? draft.icon.value : iconGlyph(draft.icon)} onChange={(emoji) => setDraft((current) => ({ ...current, icon: emoji ? { type: 'emoji', value: emoji } : undefined }))} />
     <fieldset className="event-field-editor tracking-semantics"><legend>How is this tracked?</legend><div className="segmented"><button type="button" aria-pressed={draft.recordSemantics === 'daily_value'} onClick={() => setDraft({ ...draft, recordSemantics: 'daily_value', quickLogEnabled: false, quickLogTimingMode: undefined })}><strong>Daily Value</strong><small>One answer for the day</small></button><button type="button" aria-pressed={draft.recordSemantics === 'occurrence'} onClick={() => setDraft({ ...draft, recordSemantics: 'occurrence', inputType: 'boolean', defaultAnswer: undefined, quickLogTimingMode: draft.quickLogTimingMode ?? 'either' })}><strong>Occurrence</strong><small>Zero or more times per day</small></button></div></fieldset>
     {draft.recordSemantics === 'occurrence' && <label className="form-field checkbox-field"><span><input type="checkbox" checked={Boolean(draft.quickLogEnabled)} onChange={(event) => setDraft({ ...draft, quickLogEnabled: event.target.checked, quickLogTimingMode: event.target.checked ? draft.quickLogTimingMode ?? 'either' : undefined })} /> Available in Quick Log</span><small>Daily Check-In inclusion is configured separately in your routine.</small></label>}
     <div className="form-row">
@@ -139,6 +148,7 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
       {draft.inputType === 'duration' && <p className="version-note">Durations are stored in minutes so they remain consistent for future analysis.</p>}
       <label className="form-field"><span>Tags <small>comma separated</small></span><input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="morning, wellness" /></label>
       <fieldset className="icon-picker"><legend>Icon</legend><div className="segmented segmented--small"><button type="button" aria-pressed={iconMode === 'library'} onClick={() => { setIconMode('library'); setDraft({ ...draft, icon: { type: 'library', value: 'sparkle' } }) }}>Built-in</button><button type="button" aria-pressed={iconMode === 'emoji'} onClick={() => { setIconMode('emoji'); setDraft({ ...draft, icon: { type: 'emoji', value: '✨' } }) }}>Emoji</button></div>{iconMode === 'library' ? <div className="icon-grid">{builtInIcons.map((icon) => <button type="button" key={icon.id} className={draft.icon?.type === 'library' && draft.icon.value === icon.id ? 'is-selected' : ''} aria-label={icon.label} title={icon.label} onClick={() => setDraft({ ...draft, icon: { type: 'library', value: icon.id } })}>{icon.glyph}</button>)}</div> : <label className="form-field"><span>Your emoji</span><input value={draft.icon?.type === 'emoji' ? draft.icon.value : ''} onChange={(event) => setDraft({ ...draft, icon: { type: 'emoji', value: event.target.value } })} maxLength={16} /></label>}</fieldset>
+      {iconMode === 'emoji' ? <TraceEmojiPicker onSelect={(emoji) => setDraft((current) => ({ ...current, icon: { type: 'emoji', value: emoji } }))} /> : null}
     </div></details>
     {details && <p className="version-note">Changing what an answer means creates a new version. Old records keep their original meaning.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}

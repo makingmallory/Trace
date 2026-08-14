@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import type {
   CompletionBehavior,
@@ -14,6 +14,9 @@ import type {
 } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
 import { AnswerChoiceButtons } from './AnswerChoiceButtons.tsx'
+import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
+import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
+import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
 import {
   categoricalTriggerRule,
@@ -205,7 +208,7 @@ function RoutineItemEditor({
   }
 
   const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : 'Save Changes'
-  return <article className={`routine-item${saveState === 'saved' ? ' routine-item--saved' : ''}`}>
+  return <article className={`routine-item${saveState === 'saved' ? ' routine-item--saved' : ''}`} style={{ '--routine-category-accent': effectiveCategoryColor(question.category) } as CSSProperties}>
     <div className="routine-item__top">
       <span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span>
       <div><h3>{question.version.name}</h3><small>{question.category.name} · {inputTypeLabel(question.version.inputType)}</small></div>
@@ -260,7 +263,7 @@ export function RoutineSettingsScreen() {
 
   if (!configuration) return <div className="screen trackables-loading">Loading Daily Check-In…</div>
   return <section className="screen routine-settings">
-    <header className="subpage-header"><Link className="back-link" to="/settings">← Settings</Link><p className="eyebrow">Tracking setup</p><h1>Daily Check-In</h1><p className="screen__description">Choose only what belongs in your regular daily flow. Removing a question never deletes its Trackable.</p></header>
+    <header className="subpage-header"><InlineBackHeader to="/settings" label="Tracking setup" ariaLabel="Back to Settings" /><div className="routine-heading-row"><div><h1>Daily Check-In</h1><p className="screen__description">Choose only what belongs in your regular daily flow. Removing a question never deletes its Trackable.</p></div>{configuration.routine ? <Link className="bubble-action" to="/settings/nightly-check-in/add" aria-label="Add Trackables to Daily Check-In">＋</Link> : null}</div></header>
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
     {!configuration.routine ? <div className="empty-state"><span aria-hidden="true">☾</span><h2>Build your daily routine</h2><p>Start with a few active Trackables. You can adjust the order and details anytime.</p>{configuration.availableTrackables.length === 0 ? <Link className="primary-button" to="/trackables/add">Add a Trackable first</Link> : <button className="primary-button" type="button" onClick={() => void act(() => checkInEngine.createNightlyRoutine())}>Create Daily Check-In</button>}</div> : <>
       <section className="routine-list">
@@ -275,8 +278,19 @@ export function RoutineSettingsScreen() {
           onSave={(changes) => saveItem(question.item.id, changes)}
         />)}
       </section>
-      <section className="routine-add"><div className="section-heading"><h2>Add Active Trackables</h2><span>{configuration.availableTrackables.length}</span></div>{configuration.availableTrackables.length === 0 ? <p className="notice">All active Trackables are already included.</p> : <div className="routine-add__grid">{configuration.availableTrackables.map((question) => <button type="button" key={question.trackable.id} onClick={() => void act(() => checkInEngine.addTrackable(question.trackable.id))}><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><span>{question.version.name}<small>{question.category.name}</small></span><b aria-hidden="true">＋</b></button>)}</div>}</section>
       {configuration.questions.length > 0 ? <Link className="primary-button" to="/check-in">Open Today’s Check-In</Link> : null}
     </>}
   </section>
+}
+
+export function AddToDailyCheckInScreen() {
+  const [configuration, setConfiguration] = useState<RoutineConfiguration | null>(null)
+  const [search, setSearch] = useState(''); const [categoryId, setCategoryId] = useState('all')
+  const load = useCallback(async () => setConfiguration(await checkInEngine.getConfiguration()), [])
+  useEffect(() => { void load() }, [load])
+  if (!configuration) return <div className="screen trackables-loading">Loading Trackables…</div>
+  const selected = new Set(configuration.questions.map((item) => item.trackable.id))
+  const items = [...configuration.questions, ...configuration.availableTrackables].filter((item) => (categoryId === 'all' || item.category.id === categoryId) && `${item.version.name} ${item.category.name}`.toLowerCase().includes(search.toLowerCase()))
+  const categories = configuration.questions.concat(configuration.availableTrackables).map((item) => item.category).filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index)
+  return <section className="screen routine-picker"><header className="subpage-header"><InlineBackHeader to="/settings/nightly-check-in" label="Daily Check-In" ariaLabel="Back to Daily Check-In" /><h1>Add to Daily Check-In</h1><p className="screen__description">Choose which Trackables belong in your Daily Check-In.</p></header><TrackableFilterControls categories={categories} search={search} categoryId={categoryId} onSearchChange={setSearch} onCategoryChange={setCategoryId} searchLabel="Search Daily Check-In Trackables" placeholder="Search Trackables" /><div className="routine-picker__list">{items.map((item) => <article className="preset-tile routine-picker__item" style={{ '--routine-category-accent': effectiveCategoryColor(item.category) } as CSSProperties} key={item.trackable.id}><span className="collection-card__icon">{iconGlyph(item.trackable.icon)}</span><div><h3>{item.version.name}</h3><p>{item.category.name}</p></div><button className={`tile-action${selected.has(item.trackable.id) ? ' is-added' : ''}`} type="button" onClick={() => void (selected.has(item.trackable.id) ? checkInEngine.removeTrackable(configuration.questions.find((question) => question.trackable.id === item.trackable.id)!.item.id) : checkInEngine.addTrackable(item.trackable.id)).then(load)}>{selected.has(item.trackable.id) ? 'Added' : 'Add'}</button></article>)}</div></section>
 }

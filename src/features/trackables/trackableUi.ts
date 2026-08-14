@@ -54,13 +54,15 @@ export function filterOwnedTrackables(
   trackables: readonly TrackableDetails[],
   categories: readonly Category[],
   search: string,
+  categoryId = 'all',
 ): readonly TrackableDetails[] {
   const query = search.trim().toLocaleLowerCase()
-  if (!query) return trackables
   const categoryNames = new Map(categories.map((category) => [category.id, category.name.toLocaleLowerCase()]))
   return trackables.filter(({ trackable, version }) =>
-    version.name.toLocaleLowerCase().includes(query)
-    || categoryNames.get(trackable.categoryId)?.includes(query),
+    (categoryId === 'all' || trackable.categoryId === categoryId)
+    && (!query
+      || version.name.toLocaleLowerCase().includes(query)
+      || categoryNames.get(trackable.categoryId)?.includes(query)),
   )
 }
 
