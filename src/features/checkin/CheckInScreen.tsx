@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { isValidLocalDate, localDateFor, OccurrenceConflictError, type CheckInSnapshot, type RoutineQuestion, type SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
 import { QuestionInput } from './QuestionInput.tsx'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
-import { checkInRouteForDate, completionDestination } from './checkInNavigation.ts'
+import { checkInRouteForDate, checkInRouteForToday, completionDestination, historyReturnPath, resolveCheckInReturnTo } from './checkInNavigation.ts'
 import { evaluateConditionalRule } from '../../domain/checkin/conditionalRules.ts'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
-import { historyReturnPath, quickLogEditPath } from '../events/quickLogNavigation.ts'
+import { quickLogEditPath } from '../events/quickLogNavigation.ts'
 
 function displayDate(localDate: string): string {
   const date = new Date(`${localDate}T12:00:00`)
@@ -27,10 +27,13 @@ function categoryAccentStyle(category: { id: string; color?: string }): CSSPrope
 export function CheckInScreen() {
   const navigate = useNavigate()
   const { localDate: routeDate } = useParams()
+  const [searchParams] = useSearchParams()
   const today = useMemo(() => localDateFor(new Date()), [])
   const selectedDate = routeDate ?? today
   const fromHistory = Boolean(routeDate)
   const historical = selectedDate !== today
+  const fallbackReturnTo = routeDate ? historyReturnPath(routeDate) : '/'
+  const returnTo = resolveCheckInReturnTo(searchParams.get('returnTo'), fallbackReturnTo)
   const [snapshot, setSnapshot] = useState<CheckInSnapshot | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -39,6 +42,7 @@ export function CheckInScreen() {
   const [warning, setWarning] = useState<readonly string[]>([])
   const [savedMessage, setSavedMessage] = useState('')
   const messageTimer = useRef<number | undefined>(undefined)
+  const dateInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     let active = true
@@ -106,7 +110,7 @@ export function CheckInScreen() {
       setWarning([])
       setHasCompletedEdits(false)
       if (editingCompleted) flash('Changes saved')
-      const destination = completionDestination(fromHistory, editingCompleted, result.completed, snapshot.record.localDate)
+      const destination = completionDestination(returnTo, fallbackReturnTo, result.completed)
       if (destination) navigate(destination, { replace: true })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not finish this Check-In.')
@@ -120,10 +124,20 @@ export function CheckInScreen() {
       setError('Choose today or an earlier date.')
       return
     }
-    navigate(checkInRouteForDate(localDate), { replace: true })
+    navigate(localDate === today ? checkInRouteForToday(returnTo) : checkInRouteForDate(localDate, returnTo), { replace: true })
   }
 
-  if (error && !snapshot) return <section className="screen"><header className="trace-page-header subpage-header"><InlineBackHeader to={fromHistory && isValidLocalDate(selectedDate) ? `/history?date=${selectedDate}` : '/'} label="Daily Check-In" ariaLabel={`Back to ${fromHistory ? 'History' : 'Home'}`} /><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Daily Check-In</Link></section>
+  function openDatePicker() {
+    const input = dateInputRef.current
+    if (!input) return
+    input.focus()
+    if (typeof input.showPicker === 'function') {
+      try { input.showPicker() }
+      catch { input.click() }
+    } else input.click()
+  }
+
+  if (error && !snapshot) return <section className="screen"><header className="trace-page-header subpage-header"><InlineBackHeader to={returnTo} label="Daily Check-In" ariaLabel="Back" /><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Daily Check-In</Link></section>
   if (!snapshot) return <div className="screen trackables-loading">Opening Check-In…</div>
 
   const completed = snapshot.record.status === 'completed'
@@ -139,7 +153,7 @@ export function CheckInScreen() {
   const progress = snapshot.visibleQuestions.length ? Math.round((answeredCount / snapshot.visibleQuestions.length) * 100) : 0
 
   return <section className="screen checkin-screen checkin-screen--daily">
-    <header className="trace-page-header checkin-header page-header"><div><h1>Daily Check-In</h1><p className="screen__description">{historical ? `Checking in for ${displayDate(snapshot.record.localDate)}. Answers stay attached to this date.` : completed ? 'Today is complete. You can still edit any answer below.' : 'Your answers are saved automatically to this device.'}</p></div><div className="checkin-header__actions"><label className="checkin-date"><time dateTime={snapshot.record.localDate}>{displayBadgeDate(snapshot.record.localDate)}</time><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /><path d="m14.5 15.5 3-3 1.5 1.5-3 3-2 .5.5-2Z" /></svg><input type="date" aria-label="Choose Check-In date" value={snapshot.record.localDate} max={today} onInput={(event) => changeDate(event.currentTarget.value)} /></label><Link className="manage-link" to="/settings/nightly-check-in">Edit Questions</Link></div></header>
+    <header className="trace-page-header checkin-header page-header"><div><h1>Daily Check-In</h1><p className="screen__description">{historical ? `Checking in for ${displayDate(snapshot.record.localDate)}. Answers stay attached to this date.` : completed ? 'Today is complete. You can still edit any answer below.' : 'Your answers are saved automatically to this device.'}</p></div><div className="checkin-header__actions"><button className="checkin-date" type="button" aria-label={`Choose Check-In date, ${displayBadgeDate(snapshot.record.localDate)}`} onClick={openDatePicker}><time dateTime={snapshot.record.localDate}>{displayBadgeDate(snapshot.record.localDate)}</time><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /><path d="m14.5 15.5 3-3 1.5 1.5-3 3-2 .5.5-2Z" /></svg></button><input ref={dateInputRef} className="checkin-date__input" type="date" aria-label="Choose Check-In date" value={snapshot.record.localDate} max={today} onInput={(event) => changeDate(event.currentTarget.value)} onChange={(event) => changeDate(event.currentTarget.value)} /><Link className="manage-link" to="/settings/nightly-check-in">Edit Questions</Link></div></header>
     <div className="checkin-progress" role="status" aria-live="polite"><span><strong>{answeredCount}</strong> of {snapshot.visibleQuestions.length} answered</span><div className="checkin-progress__track" aria-hidden="true"><i style={{ width: `${progress}%` }} /></div>{statusDetail ? <span className="checkin-progress__detail">{statusDetail}</span> : null}</div>
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
     <form className="checkin-form" onSubmit={(event) => { event.preventDefault(); void finish() }}>

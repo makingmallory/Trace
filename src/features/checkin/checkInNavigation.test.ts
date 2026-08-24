@@ -1,22 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { checkInRouteForDate, completionDestination, shouldReturnHomeAfterCompletion } from './checkInNavigation.ts'
+import { checkInRouteForDate, checkInRouteForToday, completionDestination, historyReturnPath, resolveCheckInReturnTo } from './checkInNavigation.ts'
 
 describe('Check-In completion navigation', () => {
-  it('returns home only after a new current-day Check-In completes', () => {
-    expect(shouldReturnHomeAfterCompletion(false, false, true)).toBe(true)
-    expect(shouldReturnHomeAfterCompletion(false, false, false)).toBe(false)
-    expect(shouldReturnHomeAfterCompletion(false, true, true)).toBe(false)
-    expect(shouldReturnHomeAfterCompletion(true, false, true)).toBe(false)
+  it('carries Home and History origins through Check-In routes', () => {
+    expect(checkInRouteForToday('/')).toBe('/check-in?returnTo=%2F')
+    expect(checkInRouteForDate('2026-08-09', historyReturnPath('2026-08-18'))).toBe('/history/check-in/2026-08-09?returnTo=%2Fhistory%3Fdate%3D2026-08-18')
   })
 
-  it('routes an explicitly selected date through the shared historical Check-In screen', () => {
-    expect(checkInRouteForDate('2026-08-09')).toBe('/history/check-in/2026-08-09')
+  it('accepts allowlisted origins and keeps a History date context', () => {
+    expect(resolveCheckInReturnTo('/', '/history?date=2026-08-09')).toBe('/')
+    expect(resolveCheckInReturnTo('/history?date=2026-08-18', '/')).toBe('/history?date=2026-08-18')
+    expect(resolveCheckInReturnTo('/settings/nightly-check-in', '/')).toBe('/settings/nightly-check-in')
   })
 
-  it('returns a newly completed historical Check-In to its selected History day', () => {
-    expect(completionDestination(true, false, true, '2026-08-09')).toBe('/history?date=2026-08-09')
-    expect(completionDestination(false, false, true, '2026-08-10')).toBe('/')
-    expect(completionDestination(true, true, true, '2026-08-09')).toBeNull()
-    expect(completionDestination(true, false, false, '2026-08-09')).toBeNull()
+  it('falls back safely when no valid origin is supplied', () => {
+    expect(resolveCheckInReturnTo(null, '/')).toBe('/')
+    expect(resolveCheckInReturnTo('https://example.com', '/history?date=2026-08-09')).toBe('/history?date=2026-08-09')
+    expect(resolveCheckInReturnTo('/settings', '/')).toBe('/')
+  })
+
+  it('returns to the stored origin only after the selected Check-In saves', () => {
+    expect(completionDestination('/history?date=2026-08-18', '/history?date=2026-08-09', true)).toBe('/history?date=2026-08-18')
+    expect(completionDestination('/', '/history?date=2026-08-09', true)).toBe('/')
+    expect(completionDestination('/history?date=2026-08-18', '/history?date=2026-08-09', false)).toBeNull()
   })
 })

@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { CategoryDraft, TrackableDetails, TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { getPresetById, presetPacks, trackablePresets, type PresetPack, type TrackablePreset } from '../../presets/trackablePresets.ts'
 import { EmojiIconField, TrackableEditor } from './TrackableEditor.tsx'
 import { trackableEngine } from './trackableEngine.ts'
-import { activeTrackableForPreset, filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, inputTypes, presetIcon } from './trackableUi.ts'
+import { activeTrackableForPreset, filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, inputTypes, packDisplayIcon, presetIcon } from './trackableUi.ts'
 import { ActionIcon } from '../../components/ActionIcons.tsx'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
 import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
 import { MainPageHeader } from '../../components/MainPageHeader.tsx'
 import { isQuickLogEligible, recordSemanticsFor } from '../../domain/trackables/trackableSemantics.ts'
 import { categoryColorSuggestions, effectiveCategoryColor } from '../../themes/categoryColors.ts'
+import { resolveCategoryEditorRoute } from './categoryEditorRoute.ts'
 
 function useTrackableLibrary() {
   const [library, setLibrary] = useState<TrackableLibrary | null>(null)
@@ -21,8 +22,8 @@ function useTrackableLibrary() {
   return { library, error, setError, refresh }
 }
 
-function Page({ eyebrow, title, description, backTo = '/trackables', children }: { eyebrow: string; title: string; description: string; backTo?: string; children: ReactNode }) {
-  return <section className="screen trackables-screen"><header className="trace-page-header subpage-header"><InlineBackHeader to={backTo} label={eyebrow} ariaLabel="Back" /><h1>{title}</h1><p className="screen__description">{description}</p></header>{children}</section>
+function Page({ eyebrow, title, description, backTo = '/trackables', headerAction, children }: { eyebrow: string; title: string; description: string; backTo?: string; headerAction?: ReactNode; children: ReactNode }) {
+  return <section className="screen trackables-screen"><header className="trace-page-header subpage-header"><InlineBackHeader to={backTo} label={eyebrow} ariaLabel="Back" />{headerAction ? <div className="subpage-header__title-row"><h1>{title}</h1>{headerAction}</div> : <h1>{title}</h1>}<p className="screen__description">{description}</p></header>{children}</section>
 }
 
 function Loading({ error }: { error: string }) {
@@ -155,7 +156,7 @@ export function PackCard({ pack, onAdd, onToggle, busyId = '', addedPresetIds = 
   const presets = pack.presetIds.map((id) => getPresetById(id)).filter((item): item is TrackablePreset => Boolean(item))
   const missing = presets.filter((preset) => !addedPresetIds.includes(preset.id))
   const action = missing.length ? <button className="browse-section__bulk-action" type="button" disabled={busyId === pack.id} onClick={() => onAdd(missing.map((preset) => preset.id))}>{busyId === pack.id ? 'Adding…' : missing.length === presets.length ? 'Add All' : 'Add Remaining'}</button> : null
-  return <BrowseSection id={`starter-pack-${pack.id}`} icon="✦" title={pack.name} count={presets.length} description={pack.description} expanded={expanded} onToggle={() => setExpanded((current) => !current)} action={action}>{presets.map((preset) => <PresetCard key={preset.id} preset={preset} category={categories.find((category) => category.id === preset.categoryId)} added={addedPresetIds.includes(preset.id)} busy={busyId === preset.id} onAdd={() => onToggle(preset)} />)}{pack.futureItems ? <p className="pack-future">Later milestones: {pack.futureItems.join(', ')}</p> : null}</BrowseSection>
+  return <BrowseSection id={`starter-pack-${pack.id}`} icon={packDisplayIcon(pack.presetIds, trackablePresets, categories)} title={pack.name} count={presets.length} description={pack.description} expanded={expanded} onToggle={() => setExpanded((current) => !current)} action={action}>{presets.map((preset) => <PresetCard key={preset.id} preset={preset} category={categories.find((category) => category.id === preset.categoryId)} added={addedPresetIds.includes(preset.id)} busy={busyId === preset.id} onAdd={() => onToggle(preset)} />)}{pack.futureItems ? <p className="pack-future">Later milestones: {pack.futureItems.join(', ')}</p> : null}</BrowseSection>
 }
 
 export function StarterPacksScreen() {
@@ -221,25 +222,42 @@ export function CategoriesScreen() {
   const [notice, setNotice] = useState('')
   if (!library) return <Loading error={error} />
   async function action(task: () => Promise<unknown>, success: string) { setError(''); setNotice(''); try { await task(); await refresh(); setNotice(success) } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update categories.') } }
-  return <Page eyebrow="Manage" title="Categories" description="Arrange the shelves that hold your Trackables." backTo="/trackables/manage">{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}<section className="category-manager"><Link className="primary-button button-link category-create" to="/trackables/manage/categories/new">+ Add Category</Link><ol className="category-list">{library.categories.map((category, index) => <li key={category.id} style={categoryAccentStyle(category)}><div className="category-list__row"><span className="collection-card__icon category-list__icon" aria-hidden="true">{iconGlyph(category.icon)}</span><div className="management-row__copy"><strong><i className="category-color-preview" aria-hidden="true" />{category.name}</strong><small>{category.active ? 'Visible' : 'Hidden'}</small></div><div className="category-actions"><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Up`} title="Move Up" disabled={index === 0} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, -1), 'Categories reordered.')}><ActionIcon name="moveUp" /></button><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Down`} title="Move Down" disabled={index === library.categories.length - 1} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, 1), 'Categories reordered.')}><ActionIcon name="moveDown" /></button><Link className="management-icon-button" aria-label={`Edit ${category.name}`} title="Edit" to={`/trackables/manage/categories/${encodeURIComponent(category.id)}`}><ActionIcon name="edit" /></Link></div></div></li>)}</ol></section></Page>
+  return <Page eyebrow="Manage" title="Categories" description="Arrange the shelves that hold your Trackables." backTo="/trackables/manage" headerAction={<Link className="bubble-action category-header-action" to="/trackables/manage/categories/new" aria-label="Add Category" title="Add Category"><ActionIcon name="add" /></Link>}>{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}<section className="category-manager"><ol className="category-list">{library.categories.map((category, index) => <li key={category.id} style={categoryAccentStyle(category)}><div className="category-list__row"><span className="collection-card__icon category-list__icon" aria-hidden="true">{iconGlyph(category.icon)}</span><div className="management-row__copy"><strong>{category.name}</strong><small>{category.active ? 'Visible' : 'Hidden'}</small></div><div className="category-actions"><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Up`} title="Move Up" disabled={index === 0} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, -1), 'Categories reordered.')}><ActionIcon name="moveUp" /></button><button type="button" className="management-icon-button" aria-label={`Move ${category.name} Down`} title="Move Down" disabled={index === library.categories.length - 1} onClick={() => void action(() => trackableEngine.reorderCategory(category.id, 1), 'Categories reordered.')}><ActionIcon name="moveDown" /></button><Link className="management-icon-button" aria-label={`Edit ${category.name}`} title="Edit" to={`/trackables/manage/categories/${encodeURIComponent(category.id)}`}><ActionIcon name="edit" /></Link></div></div></li>)}</ol></section></Page>
 }
 
-export function CategoryEditorScreen() {
+export function CategoryEditorScreen({ mode }: { mode: 'create' | 'edit' }) {
   const { categoryId } = useParams()
   const navigate = useNavigate()
   const { library, error, setError } = useTrackableLibrary()
-  const category = library?.categories.find((item) => item.id === categoryId)
+  const route = library ? resolveCategoryEditorRoute(mode, categoryId, library.categories) : null
+  const category = route?.kind === 'edit' ? library?.categories.find((item) => item.id === route.categoryId) : undefined
   const [draft, setDraft] = useState<CategoryDraft>({ name: '', icon: { type: 'emoji', value: '✨' }, active: true })
   const [automaticColor, setAutomaticColor] = useState(true)
   const [busy, setBusy] = useState(false)
+  const customColorInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (category) { setDraft({ name: category.name, icon: category.icon ?? { type: 'emoji', value: '✨' }, color: category.color, active: category.active }); setAutomaticColor(!category.color) }
-  }, [category])
+    if (route?.kind === 'create') {
+      setDraft({ name: '', icon: { type: 'emoji', value: '✨' }, active: true })
+      setAutomaticColor(true)
+    } else if (category) {
+      setDraft({ name: category.name, icon: category.icon ?? { type: 'emoji', value: '✨' }, color: category.color, active: category.active })
+      setAutomaticColor(!category.color)
+    }
+  }, [category, route?.kind])
   if (!library) return <Loading error={error} />
-  if (categoryId !== 'new' && !category) return <Page eyebrow="Categories" title="Category not found" description="This category is no longer available." backTo="/trackables/manage/categories"><Link className="secondary-button button-link" to="/trackables/manage/categories">Back to Categories</Link></Page>
-  const editing = categoryId !== 'new'
+  if (route?.kind === 'not-found') return <Page eyebrow="Categories" title="Category not found" description="This category is no longer available." backTo="/trackables/manage/categories"><Link className="secondary-button button-link" to="/trackables/manage/categories">Back to Categories</Link></Page>
+  const editing = route?.kind === 'edit'
   const preview = { id: category?.id ?? 'category.new', color: automaticColor ? undefined : draft.color }
+  const selectedColor = automaticColor ? effectiveCategoryColor(preview) : draft.color ?? effectiveCategoryColor(preview)
+  const customColorSelected = !automaticColor && Boolean(draft.color) && !categoryColorSuggestions.some((color) => color === draft.color)
+  const customSwatchColor = customColorSelected ? selectedColor : 'var(--color-surface-elevated)'
+  function openCustomColorPicker() {
+    const input = customColorInput.current
+    if (!input) return
+    if (typeof input.showPicker === 'function') input.showPicker()
+    else input.click()
+  }
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
     try {
@@ -250,5 +268,5 @@ export function CategoryEditorScreen() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not save this category.') }
     finally { setBusy(false) }
   }
-  return <Page eyebrow="Categories" title={editing ? 'Edit Category' : 'Add Category'} description="Choose how this category looks everywhere in Trace." backTo="/trackables/manage/categories"><form className="trackable-form trackable-editor-form category-editor-form" onSubmit={submit}><label className="form-field"><span>Name</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Morning routine" maxLength={100} required autoFocus={!editing} /></label><EmojiIconField value={draft.icon?.type === 'emoji' ? draft.icon.value : iconGlyph(draft.icon)} onChange={(emoji) => setDraft({ ...draft, icon: emoji ? { type: 'emoji', value: emoji } : undefined })} /><fieldset className="default-answer-editor category-color-editor"><legend>Color</legend><span className="category-color-suggestions">{categoryColorSuggestions.map((color) => <button key={color} type="button" className={!automaticColor && draft.color === color ? 'is-selected' : ''} style={{ '--swatch-color': color } as CSSProperties} aria-label={`Use ${color}`} onClick={() => { setDraft({ ...draft, color }); setAutomaticColor(false) }} />)}</span><label className="form-field"><span>Custom color</span><input type="color" value={automaticColor ? effectiveCategoryColor(preview) : draft.color ?? effectiveCategoryColor(preview)} onChange={(event) => { setDraft({ ...draft, color: event.target.value }); setAutomaticColor(false) }} /></label><button className="text-button" type="button" onClick={() => setAutomaticColor(true)}>Use automatic color</button></fieldset><label className="form-field checkbox-field"><span><input type="checkbox" checked={draft.active ?? true} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} /> Visible</span><small>Hidden categories remain attached to existing Trackables and history.</small></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="editor-actions"><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Create Category'}</button><button className="secondary-button" type="button" onClick={() => navigate('/trackables/manage/categories')}>Cancel</button></div></form></Page>
+  return <Page eyebrow="Categories" title={editing ? 'Edit Category' : 'Add Category'} description="Choose how this category looks everywhere in Trace." backTo="/trackables/manage/categories"><section className="trackable-editor category-editor"><form className="trackable-form trackable-editor-form category-editor-form" onSubmit={submit}><label className="form-field"><span>Name</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Morning routine" maxLength={100} required autoFocus={!editing} /></label><EmojiIconField value={draft.icon?.type === 'emoji' ? draft.icon.value : iconGlyph(draft.icon)} onChange={(emoji) => setDraft({ ...draft, icon: emoji ? { type: 'emoji', value: emoji } : undefined })} /><section className="trackable-editor-section category-color-editor" aria-labelledby="category-color-heading"><h2 id="category-color-heading">Color</h2><div className="category-color-suggestions">{categoryColorSuggestions.map((color) => <button key={color} type="button" className={!automaticColor && draft.color === color ? 'is-selected' : ''} style={{ '--swatch-color': color } as CSSProperties} aria-label={`Use ${color}`} onClick={() => { setDraft({ ...draft, color }); setAutomaticColor(false) }} />)}<button type="button" className={`category-color-swatch category-color-swatch--custom${customColorSelected ? ' is-selected' : ''}`} style={{ '--swatch-color': customSwatchColor } as CSSProperties} aria-label="Choose custom color" aria-pressed={customColorSelected} onClick={openCustomColorPicker}>+</button><input ref={customColorInput} className="category-color-editor__native-input" type="color" value={selectedColor} aria-label="Custom category color" tabIndex={-1} onChange={(event) => { setDraft({ ...draft, color: event.target.value }); setAutomaticColor(false) }} /></div>{!automaticColor ? <button className="text-button category-color-editor__automatic" type="button" onClick={() => setAutomaticColor(true)}>Use automatic color</button> : null}</section><label className="form-field checkbox-field category-visibility"><span><input type="checkbox" checked={draft.active ?? true} onChange={(event) => setDraft({ ...draft, active: event.target.checked })} /> Visible</span><small>Hidden categories remain attached to existing Trackables and history.</small></label>{error && <p className="form-error" role="alert">{error}</p>}<div className="editor-actions"><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Create Category'}</button><button className="secondary-button" type="button" onClick={() => navigate('/trackables/manage/categories')}>Cancel</button></div></form></section></Page>
 }

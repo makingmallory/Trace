@@ -20,6 +20,7 @@ import { TrashIcon } from '../../components/RecordActions.tsx'
 import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
+import { checkInRouteForToday } from './checkInNavigation.ts'
 import {
   categoricalTriggerRule,
   conditionIsComplete,
@@ -279,7 +280,7 @@ export function RoutineSettingsScreen() {
           onSave={(changes) => saveItem(question.item.id, changes)}
         />)}
       </section>
-      {configuration.questions.length > 0 ? <Link className="primary-button" to="/check-in">Open Today’s Check-In</Link> : null}
+      {configuration.questions.length > 0 ? <Link className="primary-button" to={checkInRouteForToday('/settings/nightly-check-in')}>Open Today’s Check-In</Link> : null}
     </>}
   </section>
 }

@@ -1,6 +1,7 @@
 import type { Category, IconReference, InputType } from '../../domain/models/index.ts'
 import type { TrackableDetails } from '../../domain/trackables/TrackableEngine.ts'
 import type { TrackablePreset } from '../../presets/trackablePresets.ts'
+import { iconGlyph } from '../../presets/iconLibrary.ts'
 
 export interface PresetGroup {
   category: Category
@@ -37,6 +38,37 @@ export function activeTrackableForPreset(preset: TrackablePreset, active: readon
 
 export function presetIcon(preset: TrackablePreset, category: Pick<Category, 'icon'> | undefined): IconReference | undefined {
   return preset.icon ?? category?.icon
+}
+
+/**
+ * Chooses the icon users see most often among a pack's ordered presets. Equal
+ * counts keep the first icon encountered, making the result stable by pack
+ * item order without adding pack-specific artwork.
+ */
+export function packDisplayIcon(
+  presetIds: readonly string[],
+  presets: readonly TrackablePreset[],
+  categories: readonly Pick<Category, 'id' | 'icon'>[],
+): string {
+  const presetsById = new Map(presets.map((preset) => [preset.id, preset]))
+  const categoriesById = new Map(categories.map((category) => [category.id, category]))
+  const counts = new Map<string, number>()
+  let mode = iconGlyph(undefined)
+  let modeCount = 0
+
+  for (const presetId of presetIds) {
+    const preset = presetsById.get(presetId)
+    if (!preset) continue
+    const glyph = iconGlyph(presetIcon(preset, categoriesById.get(preset.categoryId)))
+    const count = (counts.get(glyph) ?? 0) + 1
+    counts.set(glyph, count)
+    if (count > modeCount) {
+      mode = glyph
+      modeCount = count
+    }
+  }
+
+  return mode
 }
 
 export function filterPresetGroups(

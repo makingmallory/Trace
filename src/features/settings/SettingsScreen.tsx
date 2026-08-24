@@ -6,6 +6,7 @@ import { createTraceBackup, downloadTraceBackup, restoreTraceBackup } from '../.
 import { GoogleSheetsAppsScriptSyncProvider } from '../../data/sync/google/GoogleSheetsAppsScriptSyncProvider.ts'
 import type { SyncConnection } from '../../data/sync/SyncConnectionStore.ts'
 import { SYNC_METADATA_ID } from '../../data/sync/SyncService.ts'
+import { publishSyncStatusChange } from '../../data/sync/SyncStatus.ts'
 import { serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
 import { shareTextFile } from '../../platform/nativeFiles.ts'
 import type { DailyReminderResult } from '../reminders/DailyReminderCoordinator.ts'
@@ -67,6 +68,7 @@ export function SettingsScreen() {
   async function connect(event: React.FormEvent) {
     event.preventDefault()
     setState('connecting'); setMessage('')
+    publishSyncStatusChange({ syncing: true })
     try {
       const provider = new GoogleSheetsAppsScriptSyncProvider({ endpointUrl })
       const health = await provider.healthCheck()
@@ -84,21 +86,24 @@ export function SettingsScreen() {
       setMessage(result.conflicts.length ? `${result.conflicts.length} record conflict${result.conflicts.length === 1 ? '' : 's'} preserved for review.` : `Backup connected. ${result.pulled} pulled and ${result.pushed} uploaded.`)
       await refreshStatus(next)
     } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Could not connect this backup.') }
+    finally { publishSyncStatusChange({ syncing: false }) }
   }
 
   async function syncNow() {
     if (!connection || !online) { setState('error'); setMessage('You are offline. Your changes are safe and will sync later.'); return }
     setState('syncing'); setMessage('')
+    publishSyncStatusChange({ syncing: true })
     try {
       const result = await serviceForConnection(connection).sync()
       setState(result.conflicts.length ? 'error' : 'success')
       setMessage(result.conflicts.length ? `${result.conflicts.length} record conflict${result.conflicts.length === 1 ? '' : 's'} preserved; neither copy was overwritten.` : `Synced ${result.pulled + result.pushed} change${result.pulled + result.pushed === 1 ? '' : 's'}.`)
       await refreshStatus(connection)
     } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Sync did not finish. Your local data is safe.') }
+    finally { publishSyncStatusChange({ syncing: false }) }
   }
 
   function disconnect() {
-    syncConnectionStorage.clear(); setConnection(null); setSetupMode(null); setState('idle'); setMessage('Google Sheets backup disconnected. Your local data is unchanged.')
+    syncConnectionStorage.clear(); setConnection(null); setSetupMode(null); setState('idle'); setMessage('Google Sheets backup disconnected. Your local data is unchanged.'); publishSyncStatusChange()
   }
 
   async function exportBackup() {

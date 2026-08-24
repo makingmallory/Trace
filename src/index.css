@@ -107,17 +107,27 @@ button:focus-visible {
   box-shadow: 0 0.35rem 0.9rem color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 
-.milestone-badge {
-  padding: 0.35rem 0.7rem;
-  border: 1px solid var(--color-border);
+.sync-status-badge {
+  display: inline-flex;
+  min-width: 5.85rem;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.32rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
   border-radius: var(--radius-pill);
-  color: var(--color-muted-text);
-  background: var(--color-surface);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--color-primary-strong);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  font-size: 0.68rem;
+  font-weight: 760;
+  letter-spacing: 0.025em;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
 }
+
+.sync-status-badge:hover { border-color: color-mix(in srgb, var(--color-primary) 48%, var(--color-border)); background: color-mix(in srgb, var(--color-primary) 11%, var(--color-surface)); }
+.sync-status-badge:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
 
 .app-content {
   padding: var(--space-md) var(--space-lg) var(--space-xxl);
@@ -717,6 +727,13 @@ h1 {
   text-decoration: none;
 }
 
+.secondary-button:hover:not(:disabled),
+.secondary-button:active:not(:disabled) {
+  border-color: var(--color-primary-strong);
+  color: var(--color-on-primary);
+  background: linear-gradient(135deg, var(--color-secondary), var(--color-primary));
+}
+
 .text-button,
 .icon-button {
   border: 0;
@@ -907,6 +924,11 @@ h1 {
 .bubble-action svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .bubble-action:hover { background: linear-gradient(135deg, var(--color-primary), var(--color-primary-strong)); transform: translateY(-1px); }
 .bubble-action:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+
+.subpage-header__title-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.subpage-header__title-row h1 { min-width: 0; margin: 0; }
+.subpage-header__title-row .category-header-action { width: 2.6rem; height: 2.6rem; flex: 0 0 2.6rem; }
+.subpage-header__title-row .category-header-action svg { width: 1.2rem; height: 1.2rem; }
 
 .collection-count {
   display: inline-flex;
@@ -1117,10 +1139,6 @@ h1 {
 }
 
 .segmented button[aria-pressed="true"] { color: var(--color-primary-strong); background: var(--color-background-accent); box-shadow: inset 0 0 0 1px var(--color-border); }
-.tracking-semantics .segmented { width: 100%; overflow: visible; }
-.tracking-semantics .segmented button { display: grid; flex: 1 1 0; gap: 0.2rem; align-content: center; text-align: left; white-space: normal; }
-.tracking-semantics .segmented button strong { color: inherit; }
-.tracking-semantics .segmented button small { color: var(--color-muted-text); font-size: 0.76rem; font-weight: 550; line-height: 1.3; }
 .segmented--small { width: max-content; }
 .segmented--small button { min-height: 2.25rem; }
 
@@ -1207,13 +1225,8 @@ h1 {
 .category-manager { display: grid; gap: var(--space-lg); padding: var(--space-xl); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-card); }
 .trackable-form { display: grid; gap: var(--space-md); }
 .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
-.inline-fields,
 .icon-picker { margin: 0; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
-.inline-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm); }
-.inline-fields legend,
 .icon-picker legend { padding: 0 var(--space-xs); font-weight: 750; }
-.inline-fields label { display: grid; gap: var(--space-xs); color: var(--color-muted-text); font-size: 0.8rem; }
-.inline-fields input { width: 100%; min-height: 2.75rem; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-elevated); }
 .advanced-options,
 .additional-fields { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .advanced-options summary,
@@ -1270,6 +1283,7 @@ h1 {
 }
 
 .bottom-navigation__link {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 3.75rem;
@@ -1290,11 +1304,28 @@ h1 {
 .bottom-navigation__link:hover,
 .bottom-navigation__link.is-active {
   color: var(--color-primary-strong);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--color-secondary) 13%, var(--color-surface)), color-mix(in srgb, var(--color-primary) 13%, var(--color-surface)));
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
 }
 
 .bottom-navigation__link.is-active {
-  box-shadow: inset 0 -0.2rem 0 var(--color-primary);
+  box-shadow: none;
+}
+
+.bottom-navigation__link::after {
+  position: absolute;
+  right: 22%;
+  bottom: 0.28rem;
+  left: 22%;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  content: '';
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+}
+
+.bottom-navigation__link.is-active::after {
+  opacity: 1;
 }
 
 .bottom-navigation__icon {
@@ -1371,8 +1402,6 @@ h1 {
   .search-field { width: 100%; }
   .trackable-editor,
   .category-manager { padding: var(--space-md); }
-  .tracking-semantics .segmented { align-items: stretch; flex-direction: column; }
-  .inline-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .icon-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .category-list li { padding-inline: var(--space-xs); }
   .category-actions { gap: 0.2rem; }
@@ -1425,13 +1454,6 @@ h1 {
   height: 2.75rem;
   border-radius: 50%;
   box-shadow: none;
-}
-
-.app-shell--trackables-collection .milestone-badge {
-  padding: 0.5rem 0.85rem;
-  font-size: 0.7rem;
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-  box-shadow: 0 0.25rem 1rem rgb(74 28 74 / 5%);
 }
 
 .trackables-screen--collection {
@@ -1725,11 +1747,11 @@ h1 {
 .bottom-navigation__link:hover,
 .bottom-navigation__link.is-active {
   color: var(--color-primary-strong);
-  background: linear-gradient(150deg, color-mix(in srgb, var(--color-secondary) 8%, var(--color-surface)), color-mix(in srgb, var(--color-primary) 11%, var(--color-surface)));
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
 }
 
 .bottom-navigation__link.is-active {
-  box-shadow: inset 0 -0.18rem 0 var(--color-primary);
+  box-shadow: none;
 }
 
 .bottom-navigation__icon,
@@ -1814,7 +1836,6 @@ h1 {
 .app-shell--history { width: min(100%, 64rem); padding-bottom: 7.5rem; }
 .app-shell--history .brand { gap: 0.6rem; font-size: 1.75rem; font-weight: 850; }
 .app-shell--history .brand-mark { width: 2.55rem; height: 2.55rem; border-radius: 50%; box-shadow: none; }
-.app-shell--history .milestone-badge { padding: 0.45rem 0.75rem; font-size: 0.68rem; }
 .app-shell--history .history-screen { padding-bottom: 1.5rem; }
 .app-shell--history .history-search-toggle { flex-basis: 3rem; width: 3rem; height: 3rem; border-radius: 1rem; box-shadow: 0 0.35rem 1rem rgb(76 31 77 / 7%); }
 .app-shell--history .history-calendar-card { gap: 0.8rem; padding: 1rem; border-color: color-mix(in srgb, var(--color-border) 58%, transparent); border-radius: 1.35rem; box-shadow: 0 0.6rem 1.8rem rgb(76 31 77 / 7%); }
@@ -1953,10 +1974,6 @@ h1 {
   box-shadow: none;
 }
 
-.app-shell--checkin .milestone-badge {
-  display: none;
-}
-
 .checkin-screen--daily {
   display: grid;
   gap: 1rem;
@@ -2004,6 +2021,8 @@ h1 {
   display: grid;
   grid-template-columns: 0.7rem auto 1rem 0.7rem;
   column-gap: 0;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -2024,16 +2043,15 @@ h1 {
   stroke-linejoin: round;
 }
 
-.checkin-date input {
+.checkin-date__input {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 1px;
+  height: 1px;
   opacity: 0;
-  cursor: pointer;
+  pointer-events: none;
 }
 
-.checkin-date:focus-within {
+.checkin-date:focus-visible {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
 }
@@ -2330,7 +2348,7 @@ h1 {
   }
 
   .checkin-date {
-    max-width: 8.5rem;
+    max-width: 9.5rem;
     grid-template-columns: 0.3rem auto 1rem 1.1rem;
   }
 
@@ -2675,7 +2693,6 @@ h1 {
 
 .trackable-editor,
 .category-manager { gap: 1rem; padding: 1rem; border-radius: 1.2rem; }
-.inline-fields,
 .icon-picker,
 .advanced-options,
 .additional-fields,
@@ -3013,9 +3030,24 @@ h1 {
 
 /* Keep compact category rows stable on small screens. */
 .category-list li { display: block; padding: 0; border-top: 1px solid var(--color-border); }
+.category-list li { position: relative; overflow: hidden; }
+.category-list li::before { position: absolute; z-index: 1; top: 0.3rem; bottom: 0.3rem; left: 0; width: 0.26rem; border-radius: 0 0.3rem 0.3rem 0; background: var(--category-accent, var(--color-primary)); content: ''; }
 .category-list__row { display: flex; min-width: 0; min-height: 4rem; gap: var(--space-sm); align-items: center; padding: var(--space-sm); }
 .category-list .management-row__copy strong { overflow-wrap: normal; word-break: normal; }
 .category-list .management-row__copy > small { display: none; }
+.category-manager { gap: 0; padding: 0; overflow: hidden; }
+
+/* Categories use the same single-card editor hierarchy as Trackables. */
+.category-editor .trackable-editor-form > .form-field,
+.category-editor .trackable-editor-form > .trackable-editor-section { margin-bottom: 0.95rem; }
+.category-editor .category-color-editor { display: grid; gap: 0.65rem; }
+.category-editor .category-color-suggestions { position: relative; flex-wrap: wrap; gap: 0.55rem; }
+.category-editor .category-color-suggestions button { width: 2rem; height: 2rem; border-width: 3px; }
+.category-editor .category-color-swatch--custom { display: grid; place-items: center; color: var(--color-primary-strong); background: var(--swatch-color, var(--color-surface)); font-size: 1.15rem; font-weight: 700; line-height: 1; }
+.category-editor .category-color-swatch--custom.is-selected { outline: 2px solid var(--color-text); }
+.category-editor .category-color-editor__native-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.category-editor .category-color-editor__automatic { justify-self: start; min-height: auto; padding: 0; }
+.category-editor .category-visibility { padding-top: 0.9rem; border-top: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent); }
 
 .routine-item,
 .routine-add__grid > button { position: relative; overflow: hidden; }
@@ -3155,7 +3187,7 @@ h1 {
 .main-page-header__art {
   position: absolute;
   z-index: 0;
-  top: calc(-2.925rem - var(--page-header-label-space) - 0.625rem);
+  top: calc(-3.55rem - var(--page-header-label-space) - 0.625rem);
   left: calc(var(--main-page-gutter) * -1);
   width: 100vw;
   aspect-ratio: 1536 / 951;
@@ -3264,8 +3296,12 @@ h1 {
     width: 100%;
     min-height: 2.25rem;
     justify-content: center;
-    padding: 0.25rem 0.5rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 0.65rem;
     font-size: 0.75rem;
+    font-weight: 650;
+    line-height: normal;
+    white-space: nowrap;
   }
 
   .app-shell--history .history-day-detail .selected-day-navigation {
@@ -3277,6 +3313,233 @@ h1 {
     min-height: 2.25rem;
   }
 }
+
+/* Create/Edit Trackable: keep the outer card, then use spacing and dividers for hierarchy. */
+.trackable-editor .trackable-editor-form {
+  gap: 0;
+}
+
+.trackable-editor .trackable-editor-form > .form-field,
+.trackable-editor .trackable-editor-form > .form-row,
+.trackable-editor .trackable-editor-form > .checkbox-field,
+.trackable-editor .trackable-editor-form > .trackable-editor-section {
+  margin-bottom: 0.95rem;
+}
+
+.trackable-editor .trackable-editor-form .form-field {
+  gap: 0.4rem;
+}
+
+.trackable-editor .trackable-editor-form .form-field input,
+.trackable-editor .trackable-editor-form .form-field select {
+  min-height: 2.75rem;
+  padding-block: 0.55rem;
+}
+
+.trackable-editor-section {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.trackable-editor-section > h2 {
+  margin: 0 0 0.55rem;
+  font-size: 0.88rem;
+  font-weight: 780;
+  letter-spacing: -0.01em;
+}
+
+.tracking-choice-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.tracking-choice-list button {
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr);
+  min-height: 3.25rem;
+  gap: 0.12rem 0.65rem;
+  align-content: center;
+  align-items: center;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+  border-radius: 0.72rem;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface-elevated) 72%, transparent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tracking-choice-list button::before {
+  grid-row: 1 / 3;
+  grid-column: 1;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 1.5px solid color-mix(in srgb, var(--color-muted-text) 75%, transparent);
+  border-radius: 50%;
+  content: '';
+}
+
+.tracking-choice-list button strong {
+  grid-column: 2;
+  font-size: 0.9rem;
+  font-weight: 780;
+}
+
+.tracking-choice-list button small {
+  grid-column: 2;
+  color: var(--color-muted-text);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.tracking-choice-list button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+  color: var(--color-primary-strong);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.tracking-choice-list button[aria-pressed="true"]::before {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: inset 0 0 0 0.28rem var(--color-surface);
+}
+
+.trackable-editor .trackable-primary-selects {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.trackable-editor .trackable-primary-selects .form-field {
+  min-width: 0;
+}
+
+.trackable-editor .trackable-primary-selects select {
+  min-width: 0;
+  padding-inline: 0.65rem;
+  font-size: 0.8rem;
+}
+
+.trackable-scale-settings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.trackable-scale-settings > h2 {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.trackable-scale-settings label {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  color: var(--color-muted-text);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.trackable-scale-settings input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.72rem;
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+}
+
+.trackable-editor .trackable-editor-form > details {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 62%, transparent);
+  border-radius: 0;
+}
+
+.trackable-editor .trackable-editor-form > details:last-of-type {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 62%, transparent);
+}
+
+.trackable-editor .trackable-editor-form > details > summary {
+  display: flex;
+  min-height: 3rem;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.65rem 0.15rem;
+  color: var(--color-text);
+  font-size: 0.88rem;
+  font-weight: 720;
+  list-style: none;
+}
+
+.trackable-editor .trackable-editor-form > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.trackable-editor .trackable-editor-form > details > summary::before {
+  display: grid;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  place-items: center;
+  color: var(--color-primary-strong);
+  content: '›';
+  font-size: 1.15rem;
+  line-height: 1;
+  transform-origin: center;
+  transition: transform var(--motion-standard) ease;
+}
+
+.trackable-editor .trackable-editor-form > details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.trackable-editor .additional-fields__body,
+.trackable-editor .advanced-options__body {
+  gap: 0.75rem;
+  padding: 0.15rem 0 1rem 1.55rem;
+}
+
+.trackable-editor .default-answer-editor,
+.trackable-editor .icon-picker {
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.8rem 0 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 52%, transparent);
+  border-radius: 0;
+}
+
+.trackable-editor .default-answer-editor legend,
+.trackable-editor .icon-picker legend {
+  padding: 0;
+  font-size: 0.84rem;
+}
+
+.trackable-editor .additional-field-row {
+  padding-bottom: 0.45rem;
+  border-color: color-mix(in srgb, var(--color-border) 52%, transparent);
+}
+
+.trackable-editor .editor-actions {
+  flex-wrap: wrap;
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
+}
+
+.trackable-editor .editor-actions .primary-button,
+.trackable-editor .editor-actions .secondary-button {
+  min-height: 3rem;
+  white-space: nowrap;
+}
+
+.trackable-editor .editor-actions .primary-button { min-width: 10rem; }
+.trackable-editor .editor-actions .secondary-button { min-width: 6.5rem; }
 
 .trackable-editor-form .tracking-semantics + .checkbox-field + .form-row > .form-field:nth-child(2) { display: none; }
 

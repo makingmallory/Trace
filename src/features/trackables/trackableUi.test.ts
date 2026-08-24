@@ -7,7 +7,7 @@ import type { TrackableDetails } from '../../domain/trackables/TrackableEngine.t
 import { getPresetById, presetPacks, trackablePresets } from '../../presets/trackablePresets.ts'
 import { AddTrackableScreen, BrowseSection, ManageTrackablesScreen, PackCard, PresetCard } from './TrackablesScreen.tsx'
 import { TrackableEditor } from './TrackableEditor.tsx'
-import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, isPresetAlreadyActive, presetIcon } from './trackableUi.ts'
+import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, isPresetAlreadyActive, packDisplayIcon, presetIcon } from './trackableUi.ts'
 
 vi.mock('./trackableEngine.ts', () => ({ trackableEngine: {} }))
 
@@ -101,6 +101,20 @@ describe('Trackable preset browsing', () => {
     expect(presetIcon({ ...ordinary, icon: { type: 'emoji', value: '✨' } }, category)).toEqual({ type: 'emoji', value: '✨' })
   })
 
+  it('derives pack icons from the most common effective item icon with item-order ties', () => {
+    const displayCategories = [
+      { id: 'category.first', icon: { type: 'emoji' as const, value: '💗' } },
+      { id: 'category.second', icon: { type: 'emoji' as const, value: '🌙' } },
+    ]
+    const displayPresets = [
+      { ...trackablePresets[0], id: 'first-a', categoryId: 'category.first' },
+      { ...trackablePresets[0], id: 'second', categoryId: 'category.second' },
+      { ...trackablePresets[0], id: 'first-b', categoryId: 'category.first' },
+    ]
+    expect(packDisplayIcon(['first-a', 'second', 'first-b'], displayPresets, displayCategories)).toBe('💗')
+    expect(packDisplayIcon(['second', 'first-a'], displayPresets, displayCategories)).toBe('🌙')
+  })
+
   it('uses Trackable Library terminology and navigation', () => {
     const markup = renderToStaticMarkup(createElement(MemoryRouter, {}, createElement(AddTrackableScreen)))
     expect(markup).toContain('Trackable Library')
@@ -121,5 +135,20 @@ describe('Trackable preset browsing', () => {
     expect(createMarkup).toContain('autofocus=""')
     expect(editMarkup).not.toContain('autofocus=""')
     expect(editMarkup).toContain('value="Acne Location"')
+  })
+
+  it('shares the lighter tracking, answer configuration, and accordion structure across create and edit', () => {
+    const library = { categories, active: [owned('acne', 'Acne Location', 'category.skin')], archived: [] }
+    const createMarkup = renderToStaticMarkup(createElement(TrackableEditor, { library, onCancel: () => undefined, onSaved: () => undefined }))
+    const editMarkup = renderToStaticMarkup(createElement(TrackableEditor, { details: library.active[0], library, onCancel: () => undefined, onSaved: () => undefined }))
+    for (const markup of [createMarkup, editMarkup]) {
+      expect(markup).toContain('class="trackable-editor-section tracking-semantics"')
+      expect(markup).toContain('class="tracking-choice-list"')
+      expect(markup).toContain('<summary>Additional Fields')
+      expect(markup).toContain('<summary>Advanced Options</summary>')
+      expect(markup).toContain('class="form-row trackable-primary-selects"')
+      expect(markup).not.toContain('class="event-field-editor tracking-semantics"')
+    }
+    expect(createMarkup).toContain('class="trackable-editor-section trackable-scale-settings"')
   })
 })

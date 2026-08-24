@@ -49,8 +49,8 @@ function App() {
         <Route path="trackables/edit/:trackableId" element={<EditTrackableScreen />} />
         <Route path="trackables/manage" element={<ManageTrackablesScreen />} />
         <Route path="trackables/manage/categories" element={<CategoriesScreen />} />
-        <Route path="trackables/manage/categories/new" element={<CategoryEditorScreen />} />
-        <Route path="trackables/manage/categories/:categoryId" element={<CategoryEditorScreen />} />
+        <Route path="trackables/manage/categories/new" element={<CategoryEditorScreen mode="create" />} />
+        <Route path="trackables/manage/categories/:categoryId" element={<CategoryEditorScreen mode="edit" />} />
         <Route path="trackables/manage/archived" element={<ArchivedTrackablesScreen />} />
         <Route path="settings" element={<SettingsScreen />} />
         <Route path="settings/nightly-check-in" element={<RoutineSettingsScreen />} />

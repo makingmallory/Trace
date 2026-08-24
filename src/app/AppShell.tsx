@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { BottomNavigation } from '../components/BottomNavigation.tsx'
 import { SyncCoordinator } from '../features/settings/SyncCoordinator.tsx'
+import { SyncStatusBadge } from '../features/settings/SyncStatusBadge.tsx'
 import { NativeAppCoordinator } from '../platform/NativeAppCoordinator.tsx'
 
 export function AppShell() {
@@ -18,7 +19,7 @@ export function AppShell() {
         <a className="brand" href="#/" aria-label="Trace home">
           <img className="brand-mark" src={`${import.meta.env.BASE_URL}icons/trace-logo.png`} alt="Trace" />
         </a>
-        <span className="milestone-badge">Local-first</span>
+        <SyncStatusBadge />
       </header>
 
       <main className="app-content" id="main-content">
