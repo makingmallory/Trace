@@ -9,6 +9,7 @@ import {
   type TrendRange,
 } from '../../analytics/trendsAnalytics.ts'
 import { analyticsProvider } from './analyticsProvider.ts'
+import { MainPageHeader } from '../../components/MainPageHeader.tsx'
 
 const ranges: readonly { value: TrendRange; label: string }[] = [
   { value: 7, label: '7 days' },
@@ -83,12 +84,8 @@ export function TrendsScreen() {
   const summary = useMemo(() => data && activeId ? buildTrendSummary(data, activeId, range, todayLocal()) : null, [data, activeId, range])
 
   return (
-    <section className="screen trends-screen">
-      <header className="screen__heading">
-        <p className="eyebrow">Patterns</p>
-        <h1>Trends</h1>
-        <p className="screen__description">A simple look at what you’ve recorded.</p>
-      </header>
+    <section className="screen main-page-screen trends-screen">
+      <MainPageHeader eyebrow="Patterns" title="Trends" subtitle="A simple look at what you’ve recorded." />
 
       {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
       {!data && !error ? <p className="trackables-loading">Loading your trends…</p> : null}

@@ -5,6 +5,7 @@ import { IndexedDbDataRepository } from '../../data/local/IndexedDbDataRepositor
 import type { DataRepository } from '../../data/repository/DataRepository.ts'
 import { TrackableEngine, type TrackableDraft } from '../trackables/TrackableEngine.ts'
 import { EventEngine } from './EventEngine.ts'
+import { HistoryEngine } from '../history/HistoryEngine.ts'
 
 const fixedNow = () => new Date('2026-08-11T15:30:00.000Z')
 function ids(prefix: string): () => string { let value = 0; return () => `${prefix}-${++value}` }
@@ -113,6 +114,16 @@ describe('EventEngine logging', () => {
     await expect(events.getEventsForDate('2026-08-10')).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ record: expect.objectContaining({ id: logged.record.id }) })]))
     await expect(events.getEventsForDate('2026-08-17')).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ record: expect.objectContaining({ id: logged.record.id }) })]))
     await expect(events.getEventsForDate('2026-08-18')).resolves.toEqual([])
+  })
+
+  it('soft-deletes a ranged Quick Log once and removes it from every covered Home/History date', async () => {
+    const repository = new InMemoryDataRepository(); const { events } = await setup(repository)
+    const logged = await events.logEvent({ eventDefinitionId: 'preset.event.travel', timing: { occurrence: 'duration', start: { localDate: '2026-08-03', precision: 'day' }, end: { localDate: '2026-08-17', precision: 'day' }, timezone: null }, answers: [] })
+    const history = new HistoryEngine(repository, fixedNow)
+    await history.softDelete(logged.record.id)
+    await expect(events.getEventsForDate('2026-08-10')).resolves.toEqual([])
+    await expect(events.getEventsForDate('2026-08-17')).resolves.toEqual([])
+    expect(await repository.getById('logRecords', logged.record.id)).toMatchObject({ deletedAt: '2026-08-11T15:30:00.000Z' })
   })
 
   it('preserves an ongoing duration with no invented end', async () => {

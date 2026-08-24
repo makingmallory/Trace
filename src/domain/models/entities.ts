@@ -37,6 +37,8 @@ export interface Category extends SyncableEntity {
   name: string
   sortOrder: number
   active: boolean
+  /** Editable presentation icon. Older categories are upgraded from stable preset defaults. */
+  icon?: IconReference
   /** Optional user override. Omitted values use a stable shared palette. */
   color?: string
 }

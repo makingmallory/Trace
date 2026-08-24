@@ -14,6 +14,8 @@ import { ActionIcon } from '../../components/ActionIcons.tsx'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
 import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
+import { EditIcon, RecordAction, TrashIcon } from '../../components/RecordActions.tsx'
+import { historyEngine } from '../history/historyEngine.ts'
 
 const timingLabels: Record<EventTimingMode, string> = { point: 'Point in time', duration: 'Duration', either: 'Point or duration', dayOnly: 'Day only' }
 const roles: readonly { value: DataRole; label: string }[] = [
@@ -177,12 +179,20 @@ export function EventEditorScreen() {
 export function TodayEvents({ localDate }: { localDate: string }) {
   const [events, setEvents] = useState<Awaited<ReturnType<typeof eventEngine.getEventsForDate>>>([])
   const [expanded, setExpanded] = useState(false)
+  const [error, setError] = useState('')
   useEffect(() => { void eventEngine.getEventsForDate(localDate).then(setEvents) }, [localDate])
+  async function remove(recordId: string) {
+    setError('')
+    try {
+      await historyEngine.softDelete(recordId)
+      setEvents((current) => current.filter((item) => item.record.id !== recordId))
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not delete this record.') }
+  }
   if (!events.length) return null
   const visible = expanded ? events : events.slice(0, 3)
   const additionalCount = events.length - visible.length
   return <div className="today-events"><ul>{visible.map(({ record, definition }) => {
     const timing = homeEventTiming(record)
-    return <li key={record.id}><Link to={homeEventEditPath(record.id)} aria-label={`Open ${definition.name}`}><span className="today-event__icon emoji-icon" aria-hidden="true">{iconGlyph(definition.icon)}</span><span className="today-event__copy"><span className="today-event__name">{definition.name}</span>{timing ? <small className="today-event__timing">{timing}</small> : null}</span><b aria-hidden="true">›</b></Link></li>
-  })}</ul>{additionalCount > 0 ? <button type="button" className="today-events__more" aria-expanded={expanded} onClick={() => setExpanded(true)}>+{additionalCount}</button> : expanded && events.length > 3 ? <button type="button" className="today-events__more" aria-expanded="true" onClick={() => setExpanded(false)}>Show Fewer</button> : null}</div>
+    return <li key={record.id}><div className="today-event__row"><span className="today-event__icon emoji-icon" aria-hidden="true">{iconGlyph(definition.icon)}</span><span className="today-event__copy"><span className="today-event__name">{definition.name}</span>{timing ? <small className="today-event__timing">{timing}</small> : null}</span><span className="today-event__actions"><RecordAction label={`Edit ${definition.name}`} title={`Edit ${definition.name}`} to={homeEventEditPath(record.id)}><EditIcon /></RecordAction><RecordAction label={`Delete ${definition.name}`} title={`Delete ${definition.name}`} danger onClick={() => void remove(record.id)}><TrashIcon /></RecordAction></span></div></li>
+  })}</ul>{error ? <p className="form-error" role="alert">{error}</p> : null}{additionalCount > 0 ? <button type="button" className="today-events__more" aria-expanded={expanded} onClick={() => setExpanded(true)}>+{additionalCount}</button> : expanded && events.length > 3 ? <button type="button" className="today-events__more" aria-expanded="true" onClick={() => setExpanded(false)}>Show Fewer</button> : null}</div>
 }

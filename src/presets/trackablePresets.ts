@@ -4,6 +4,7 @@ export interface CategoryPreset {
   id: string
   name: string
   sortOrder: number
+  icon: IconReference
 }
 
 export interface TrackablePreset {
@@ -30,17 +31,11 @@ export interface PresetPack {
 }
 
 export const categoryPresets: readonly CategoryPreset[] = [
-  ['mood-mental', 'Mood & Mental'],
-  ['sleep-energy', 'Sleep & Energy'],
-  ['skin', 'Skin'],
-  ['cycle-reproductive', 'Cycle & Reproductive'],
-  ['pain', 'Pain'],
-  ['general-health', 'General Health'],
-  ['diet-hydration', 'Diet & Hydration'],
-  ['medication-treatment', 'Medication & Treatment'],
-  ['lifestyle-activity', 'Lifestyle & Activity'],
-  ['custom-other', 'Custom / Other'],
-].map(([slug, name], sortOrder) => ({ id: `category.${slug}`, name, sortOrder }))
+  ['mood-mental', 'Mood & Mental', '💗'], ['sleep-energy', 'Sleep & Energy', '🌙'], ['skin', 'Skin', '✨'],
+  ['cycle-reproductive', 'Cycle & Reproductive', '🌸'], ['pain', 'Pain', '⚡'], ['general-health', 'General Health', '✚'],
+  ['diet-hydration', 'Diet & Hydration', '💧'], ['medication-treatment', 'Medication & Treatment', '💊'],
+  ['lifestyle-activity', 'Lifestyle & Activity', '🏃'], ['custom-other', 'Custom / Other', '✦'],
+].map(([slug, name, emoji], sortOrder) => ({ id: `category.${slug}`, name, sortOrder, icon: { type: 'emoji', value: emoji } }))
 
 const icons: Record<string, IconReference> = {
   mood: { type: 'library', value: 'heart' }, sleep: { type: 'library', value: 'moon' }, skin: { type: 'library', value: 'sparkle' },

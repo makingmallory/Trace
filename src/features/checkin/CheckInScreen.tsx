@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { OccurrenceConflictError, type CheckInSnapshot, type RoutineQuestion, type SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
+import { isValidLocalDate, localDateFor, OccurrenceConflictError, type CheckInSnapshot, type RoutineQuestion, type SavedAnswer } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInEngine } from './checkInEngine.ts'
 import { QuestionInput } from './QuestionInput.tsx'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
-import { shouldReturnHomeAfterCompletion } from './checkInNavigation.ts'
+import { checkInRouteForDate, completionDestination } from './checkInNavigation.ts'
 import { evaluateConditionalRule } from '../../domain/checkin/conditionalRules.ts'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
@@ -14,14 +14,22 @@ function displayDate(localDate: string): string {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(date)
 }
 
+function displayBadgeDate(localDate: string): string {
+  const date = new Date(`${localDate}T12:00:00`)
+  return new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric' }).format(date)
+}
+
 function categoryAccentStyle(category: { id: string; color?: string }): CSSProperties {
   return { '--checkin-category-accent': effectiveCategoryColor(category) } as CSSProperties
 }
 
 export function CheckInScreen() {
   const navigate = useNavigate()
-  const { localDate = '' } = useParams()
-  const historical = /^\d{4}-\d{2}-\d{2}$/.test(localDate)
+  const { localDate: routeDate } = useParams()
+  const today = useMemo(() => localDateFor(new Date()), [])
+  const selectedDate = routeDate ?? today
+  const fromHistory = Boolean(routeDate)
+  const historical = selectedDate !== today
   const [snapshot, setSnapshot] = useState<CheckInSnapshot | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -31,7 +39,18 @@ export function CheckInScreen() {
   const [savedMessage, setSavedMessage] = useState('')
   const messageTimer = useRef<number | undefined>(undefined)
 
-  useEffect(() => { void checkInEngine.getOrCreateToday(historical ? localDate : undefined).then(setSnapshot).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not open Check-In.')) }, [historical, localDate])
+  useEffect(() => {
+    let active = true
+    setSnapshot(null)
+    setError('')
+    setWarning([])
+    setSavedMessage('')
+    setHasCompletedEdits(false)
+    void checkInEngine.getOrCreateForDate(selectedDate).then((next) => { if (active) setSnapshot(next) }).catch((reason: unknown) => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Could not open Check-In.')
+    })
+    return () => { active = false }
+  }, [selectedDate])
   useEffect(() => () => window.clearTimeout(messageTimer.current), [])
 
   const groups = useMemo(() => {
@@ -86,7 +105,8 @@ export function CheckInScreen() {
       setWarning([])
       setHasCompletedEdits(false)
       if (editingCompleted) flash('Changes saved')
-      if (shouldReturnHomeAfterCompletion(historical, editingCompleted, result.completed)) navigate('/', { replace: true })
+      const destination = completionDestination(fromHistory, editingCompleted, result.completed, snapshot.record.localDate)
+      if (destination) navigate(destination, { replace: true })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not finish this Check-In.')
     } finally {
@@ -94,8 +114,16 @@ export function CheckInScreen() {
     }
   }
 
-  if (error && !snapshot) return <section className="screen"><header className="subpage-header"><InlineBackHeader to={historical ? `/history?date=${localDate}` : '/'} label="Daily Check-In" ariaLabel={`Back to ${historical ? 'History' : 'Home'}`} /><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Daily Check-In</Link></section>
-  if (!snapshot) return <div className="screen trackables-loading">Opening today’s Check-In…</div>
+  function changeDate(localDate: string) {
+    if (!isValidLocalDate(localDate) || localDate > today) {
+      setError('Choose today or an earlier date.')
+      return
+    }
+    navigate(checkInRouteForDate(localDate), { replace: true })
+  }
+
+  if (error && !snapshot) return <section className="screen"><header className="subpage-header"><InlineBackHeader to={fromHistory && isValidLocalDate(selectedDate) ? `/history?date=${selectedDate}` : '/'} label="Daily Check-In" ariaLabel={`Back to ${fromHistory ? 'History' : 'Home'}`} /><h1>Set up your questions</h1><p className="screen__description">{error}</p></header><Link className="primary-button" to="/settings/nightly-check-in">Configure Daily Check-In</Link></section>
+  if (!snapshot) return <div className="screen trackables-loading">Opening Check-In…</div>
 
   const completed = snapshot.record.status === 'completed'
   const primaryLabel = completionSaving
@@ -110,11 +138,11 @@ export function CheckInScreen() {
   const progress = snapshot.visibleQuestions.length ? Math.round((answeredCount / snapshot.visibleQuestions.length) * 100) : 0
 
   return <section className="screen checkin-screen checkin-screen--daily">
-    <header className="checkin-header page-header"><div><h1>Daily Check-In</h1><p className="screen__description">{historical ? `Editing ${snapshot.record.localDate}. Changes stay attached to this original Check-In.` : completed ? 'Today is complete. You can still edit any answer below.' : 'Your answers are saved automatically to this device.'}</p></div><div className="checkin-header__actions"><time className="checkin-date" dateTime={snapshot.record.localDate}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></svg>{displayDate(snapshot.record.localDate)}</time><Link className="manage-link" to="/settings/nightly-check-in">Edit Questions</Link></div></header>
+    <header className="checkin-header page-header"><div><h1>Daily Check-In</h1><p className="screen__description">{historical ? `Checking in for ${displayDate(snapshot.record.localDate)}. Answers stay attached to this date.` : completed ? 'Today is complete. You can still edit any answer below.' : 'Your answers are saved automatically to this device.'}</p></div><div className="checkin-header__actions"><label className="checkin-date"><time dateTime={snapshot.record.localDate}>{displayBadgeDate(snapshot.record.localDate)}</time><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /><path d="m14.5 15.5 3-3 1.5 1.5-3 3-2 .5.5-2Z" /></svg><input type="date" aria-label="Choose Check-In date" value={snapshot.record.localDate} max={today} onInput={(event) => changeDate(event.currentTarget.value)} /></label><Link className="manage-link" to="/settings/nightly-check-in">Edit Questions</Link></div></header>
     <div className="checkin-progress" role="status" aria-live="polite"><span><strong>{answeredCount}</strong> of {snapshot.visibleQuestions.length} answered</span><div className="checkin-progress__track" aria-hidden="true"><i style={{ width: `${progress}%` }} /></div>{statusDetail ? <span className="checkin-progress__detail">{statusDetail}</span> : null}</div>
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
     <form className="checkin-form" onSubmit={(event) => { event.preventDefault(); void finish() }}>
-      <nav className="checkin-category-jumps" aria-label="Check-In categories">{groups.map(([categoryId, { category, questions }]) => <button type="button" key={categoryId} onClick={() => document.getElementById(`checkin-category-${categoryId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span aria-hidden="true">{iconGlyph(questions[0]?.trackable.icon)}</span><small>{category.name}</small></button>)}</nav>
+      <nav className="checkin-category-jumps" aria-label="Check-In categories">{groups.map(([categoryId, { category }]) => <button type="button" key={categoryId} onClick={() => document.getElementById(`checkin-category-${categoryId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><span aria-hidden="true">{iconGlyph(category.icon)}</span><small>{category.name}</small></button>)}</nav>
       <div className="section-heading"><h2>Usual Questions</h2></div>
       {groups.map(([categoryId, { category, questions }]) => <section className="checkin-category" id={`checkin-category-${categoryId}`} style={categoryAccentStyle(category)} key={categoryId}><h2>{category.name}</h2><div className="question-stack">{questions.map((question) => {
         const observation = snapshot.observations.find((item) => item.trackableId === question.trackable.id)

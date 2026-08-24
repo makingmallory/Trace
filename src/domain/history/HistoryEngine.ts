@@ -44,6 +44,7 @@ export interface HistoryAnswer {
 export interface HistoryAnswerGroup {
   category: string
   categoryId?: string
+  categoryIcon?: IconReference
   answers: readonly HistoryAnswer[]
 }
 
@@ -296,7 +297,7 @@ export function buildDayDetail(data: HistoryData, localDate: string, today = cur
   const routineRecord = records.filter((record) => record.recordKind === 'routine').sort((a, b) => Number(b.status === 'completed') - Number(a.status === 'completed') || b.updatedAt.localeCompare(a.updatedAt))[0]
   let checkIn: HistoryDayDetail['checkIn'] = null
   if (routineRecord) {
-    const grouped = new Map<string, { categoryId?: string; answers: HistoryAnswer[] }>()
+    const grouped = new Map<string, { categoryId?: string; categoryIcon?: IconReference; answers: HistoryAnswer[] }>()
     const orderedItems = routineItemsForRecord(data, routineRecord)
     const itemOrder = new Map(orderedItems.flatMap((item, index) => item.target.kind === 'trackable' ? [[item.target.trackableId, index] as const] : []))
     const observations = data.observations.filter((item) => item.logRecordId === routineRecord.id && !item.deletedAt).sort((a, b) => (itemOrder.get(a.trackableId) ?? Number.MAX_SAFE_INTEGER) - (itemOrder.get(b.trackableId) ?? Number.MAX_SAFE_INTEGER) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
@@ -313,7 +314,7 @@ export function buildDayDetail(data: HistoryData, localDate: string, today = cur
       const categoryEntity = trackable ? data.categories.find((item) => item.id === trackable.categoryId) : undefined
       const category = categoryEntity?.name ?? 'Other'
       if (detail) {
-        const group = grouped.get(category) ?? { categoryId: categoryEntity?.id, answers: [] }
+        const group = grouped.get(category) ?? { categoryId: categoryEntity?.id, categoryIcon: categoryEntity?.icon, answers: [] }
         grouped.set(category, { ...group, answers: [...group.answers, detail] })
       }
     }

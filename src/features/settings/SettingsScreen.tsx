@@ -8,7 +8,8 @@ import type { SyncConnection } from '../../data/sync/SyncConnectionStore.ts'
 import { SYNC_METADATA_ID } from '../../data/sync/SyncService.ts'
 import { serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
 import { shareTextFile } from '../../platform/nativeFiles.ts'
-import { loadReminderSettings, saveDailyCheckInReminder } from '../reminders/reminderSettings.ts'
+import type { DailyReminderResult } from '../reminders/DailyReminderCoordinator.ts'
+import { createDailyReminderCoordinator } from '../reminders/reminderRuntime.ts'
 
 type SetupMode = 'new' | 'existing' | null
 type RunState = 'idle' | 'connecting' | 'syncing' | 'success' | 'error'
@@ -28,6 +29,8 @@ export function SettingsScreen() {
   const [online, setOnline] = useState(() => navigator.onLine)
   const [dailyReminderEnabled, setDailyReminderEnabled] = useState(false)
   const [dailyReminderTime, setDailyReminderTime] = useState('21:00')
+  const [reminderBusy, setReminderBusy] = useState(false)
+  const [reminderMessage, setReminderMessage] = useState('')
 
   async function refreshStatus(active = connection) {
     if (!active) { setLastSync(null); setPending(0); return }
@@ -39,7 +42,21 @@ export function SettingsScreen() {
   }
 
   useEffect(() => { void refreshStatus() }, [connection])
-  useEffect(() => { void loadReminderSettings(new IndexedDbDataRepository()).then((settings) => { setDailyReminderEnabled(Boolean(settings.dailyCheckInReminder?.enabled)); setDailyReminderTime(settings.dailyCheckInReminder?.time ?? '21:00') }) }, [])
+  useEffect(() => {
+    let active = true
+    void createDailyReminderCoordinator().reconcile().then((result) => {
+      if (!active) return
+      applyReminderResult(result)
+    }).catch((error) => {
+      if (active) setReminderMessage(error instanceof Error ? error.message : 'Could not verify the Android reminder.')
+    })
+    return () => { active = false }
+  }, [])
+  useEffect(() => {
+    const refreshReminderState = (event: Event) => applyReminderResult((event as CustomEvent<DailyReminderResult>).detail)
+    window.addEventListener('trace:reminder-state-changed', refreshReminderState)
+    return () => window.removeEventListener('trace:reminder-state-changed', refreshReminderState)
+  }, [])
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine)
     window.addEventListener('online', updateOnline)
@@ -105,15 +122,27 @@ export function SettingsScreen() {
     }
   }
 
-  async function saveDailyReminder() {
+  function applyReminderResult(result: DailyReminderResult) {
+    setDailyReminderEnabled(result.config.enabled)
+    setDailyReminderTime(result.config.time)
+    if (result.outcome === 'enabled') setReminderMessage('Notifications are enabled and the Daily Check-In reminder is scheduled.')
+    else if (result.outcome === 'permission-blocked') setReminderMessage('Notifications are off because Android permission is blocked. Open Android Settings → Apps → Trace → Notifications to allow them.')
+    else if (result.outcome === 'permission-denied') setReminderMessage('Notifications are off because Android permission was not granted. Enable the reminder to try again.')
+    else setReminderMessage('Daily Check-In notifications are off.')
+  }
+
+  async function updateDailyReminder(enabled: boolean) {
+    setReminderBusy(true)
     try {
-      await saveDailyCheckInReminder(new IndexedDbDataRepository(), { enabled: dailyReminderEnabled, time: dailyReminderTime })
-      setMessage('Daily Check-In reminder saved.'); setState('success')
-    } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Could not save the reminder.') }
+      applyReminderResult(await createDailyReminderCoordinator().update({ enabled, time: dailyReminderTime }))
+    } catch (error) {
+      setDailyReminderEnabled(false)
+      setReminderMessage(error instanceof Error ? error.message : 'Could not update the Android reminder. Notifications remain off.')
+    } finally { setReminderBusy(false) }
   }
 
   return (
-    <ScreenPlaceholder eyebrow="Preferences" title="Settings" description="Manage tracking, backups, and how Trace works for you."><div className="settings-stack">
+    <ScreenPlaceholder mainPage eyebrow="Preferences" title="Settings" description="Manage tracking, backups, and how Trace works for you."><div className="settings-stack">
       <section className="sync-card" aria-labelledby="google-backup-heading">
         <div className="sync-card__heading"><span className="emoji-icon" aria-hidden="true">☁️</span><div><p className="developer-card__label">Data &amp; Backup</p><h2 id="google-backup-heading">Google Sheets Backup</h2><p>Keep an accessible copy of your Trace data in your own Google Sheet.</p></div></div>
         {!connection ? (
@@ -136,7 +165,7 @@ export function SettingsScreen() {
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Restore Trace Data</h2><p>Restore a current backup or safely upgrade a pre-unification backup.</p></div><label className="button-link">Import JSON Backup<input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file) }} /></label></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Trackables</h2><p>Manage Daily Value and Occurrence Trackables in one place.</p></div><Link className="button-link" to="/trackables/manage">Manage Trackables</Link></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Daily Check-In</h2><p>Choose, order, and configure the questions in your daily routine.</p></div><Link className="button-link" to="/settings/nightly-check-in">Configure Routine</Link></div>
-      <section className="developer-card reminder-card" aria-labelledby="daily-reminder-heading"><div><p className="developer-card__label">Reminders</p><h2 id="daily-reminder-heading">Daily Check-In Reminder</h2><p>Remind me if I haven&apos;t completed my Daily Check-In.</p></div><div className="reminder-card__controls"><label><input type="checkbox" checked={dailyReminderEnabled} onChange={(event) => setDailyReminderEnabled(event.target.checked)} /> Enable Reminder</label><label className="form-field"><span>Time</span><input type="time" value={dailyReminderTime} onChange={(event) => setDailyReminderTime(event.target.value)} required /></label><button className="secondary-button" type="button" onClick={() => void saveDailyReminder()}>Save Reminder</button></div></section>
+      <section className="developer-card reminder-card" aria-labelledby="daily-reminder-heading"><div><p className="developer-card__label">Reminders</p><h2 id="daily-reminder-heading">Daily Check-In Reminder</h2><p>Remind me if I haven&apos;t completed my Daily Check-In.</p></div><div className="reminder-card__controls"><label><input type="checkbox" checked={dailyReminderEnabled} disabled={reminderBusy} onChange={(event) => void updateDailyReminder(event.target.checked)} /> Enable Reminder</label><label className="form-field"><span>Time</span><input type="time" value={dailyReminderTime} onChange={(event) => setDailyReminderTime(event.target.value)} required /></label><button className="secondary-button" type="button" disabled={reminderBusy} onClick={() => void updateDailyReminder(dailyReminderEnabled)}>{reminderBusy ? 'Checking…' : 'Save Reminder'}</button>{reminderMessage ? <p role="status">{reminderMessage}</p> : null}</div></section>
       </div>
     </ScreenPlaceholder>
   )

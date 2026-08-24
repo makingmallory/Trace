@@ -20,6 +20,7 @@ describe('TrackableEngine', () => {
     const { engine } = setup()
     const library = await engine.getLibrary()
     expect(library.categories).toHaveLength(10)
+    expect(library.categories.find((category) => category.id === 'category.skin')?.icon).toEqual({ type: 'emoji', value: '✨' })
     expect(trackablePresets).toHaveLength(90)
 
     const created = await engine.createFromPreset('preset.cycle-reproductive.discharge-color')
@@ -104,6 +105,33 @@ describe('TrackableEngine', () => {
     expect((await repository.getAll('categories')).find((category) => category.id === 'category.skin')?.color).toBe('#a1b2c3')
     await engine.setCategoryColor('category.skin', undefined)
     expect((await repository.getAll('categories')).find((category) => category.id === 'category.skin')?.color).toBeUndefined()
+  })
+
+  it('edits category name, icon, color, and visibility without changing its identity', async () => {
+    const { engine, repository } = setup()
+    await engine.initialize()
+    await engine.updateCategory('category.skin', { name: 'Complexion', icon: { type: 'emoji', value: '🪷' }, color: '#A1B2C3', active: false })
+    const category = (await repository.getAll('categories')).find((item) => item.id === 'category.skin')
+    expect(category).toMatchObject({ id: 'category.skin', name: 'Complexion', icon: { type: 'emoji', value: '🪷' }, color: '#a1b2c3', active: false })
+  })
+
+  it('keeps a migrated legacy icon when a category is renamed', async () => {
+    const { engine, repository } = setup()
+    await repository.save('categories', { id: 'category.skin', name: 'Skin', sortOrder: 0, active: true, createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z', deletedAt: null, revision: 1 })
+    await engine.initialize()
+    expect((await repository.getAll('categories'))[0]?.icon).toEqual({ type: 'emoji', value: '✨' })
+    await engine.renameCategory('category.skin', 'Complexion')
+    expect((await repository.getAll('categories'))[0]).toMatchObject({ name: 'Complexion', icon: { type: 'emoji', value: '✨' } })
+  })
+
+  it('creates categories with their configured icon, color, and visibility and still reorders them', async () => {
+    const { engine } = setup()
+    await engine.initialize()
+    const created = await engine.createCategory({ name: 'Personal Signals', icon: { type: 'emoji', value: '🧩' }, color: '#1A2B3C', active: false })
+    expect(created).toMatchObject({ name: 'Personal Signals', icon: { type: 'emoji', value: '🧩' }, color: '#1a2b3c', active: false })
+    await engine.reorderCategory(created.id, -1)
+    const categories = (await engine.getLibrary()).categories
+    expect(categories.findIndex((item) => item.id === created.id)).toBe(9)
   })
 
   it('prevents adding an active ready-made Trackable twice', async () => {

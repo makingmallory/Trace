@@ -15,6 +15,8 @@ import type {
 import { checkInEngine } from './checkInEngine.ts'
 import { AnswerChoiceButtons } from './AnswerChoiceButtons.tsx'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
+import { ActionIcon } from '../../components/ActionIcons.tsx'
+import { TrashIcon } from '../../components/RecordActions.tsx'
 import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
@@ -208,25 +210,25 @@ function RoutineItemEditor({
   }
 
   const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : 'Save Changes'
+  const configurationId = `routine-configuration-${question.item.id}`
+  const toggleConfiguration = () => {
+    if (open && dirty) return
+    setOpen((current) => !current)
+  }
   return <article className={`routine-item${saveState === 'saved' ? ' routine-item--saved' : ''}`} style={{ '--routine-category-accent': effectiveCategoryColor(question.category) } as CSSProperties}>
     <div className="routine-item__top">
       <span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span>
-      <div><h3>{question.version.name}</h3><small>{question.category.name} · {inputTypeLabel(question.version.inputType)}</small></div>
-      <div className="routine-order">
-        <button type="button" aria-label={`Move ${question.version.name} earlier`} disabled={index === 0} onClick={() => onMove(-1)}>↑</button>
-        <button type="button" aria-label={`Move ${question.version.name} later`} disabled={index === questions.length - 1} onClick={() => onMove(1)}>↓</button>
+      <div className="routine-item__identity"><h3 title={question.version.name}>{question.version.name}</h3><small>{question.category.name} · {inputTypeLabel(question.version.inputType)}</small></div>
+      <div className="routine-item__actions">
+        <button type="button" className="management-icon-button" aria-label={`Move ${question.version.name} up`} title="Move Up" disabled={index === 0} onClick={() => onMove(-1)}><ActionIcon name="moveUp" /></button>
+        <button type="button" className="management-icon-button" aria-label={`Move ${question.version.name} down`} title="Move Down" disabled={index === questions.length - 1} onClick={() => onMove(1)}><ActionIcon name="moveDown" /></button>
+        <button type="button" className="record-icon-action record-icon-action--danger" aria-label={`Remove ${question.version.name} from Daily Check-In`} title="Remove from Daily Check-In" onClick={onRemove}><TrashIcon /></button>
+        <button type="button" className={`management-icon-button routine-item__toggle${open ? ' is-expanded' : ''}`} aria-label={`${open ? 'Collapse' : 'Expand'} settings for ${question.version.name}`} title={open ? 'Collapse settings' : 'Expand settings'} aria-expanded={open} aria-controls={configurationId} onClick={toggleConfiguration}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
       </div>
     </div>
-    <details
-      className="routine-item__advanced"
-      open={open}
-      onToggle={(event) => {
-        if (!event.currentTarget.open && dirty) { event.currentTarget.open = true; return }
-        setOpen(event.currentTarget.open)
-      }}
-    >
-      <summary>Question settings{dirty ? <span>Unsaved changes</span> : null}</summary>
+    {open ? <section id={configurationId} className="routine-item__advanced" aria-label={`Settings for ${question.version.name}`}>
       <div className="routine-item__advanced-body">
+        {dirty ? <p className="routine-item__unsaved">Unsaved changes</p> : null}
         <div className="routine-item__options">
           <label>Completion<select value={draft.completionBehavior} onChange={(event) => update({ completionBehavior: event.target.value as CompletionBehavior })}><option value="optional">Optional</option><option value="expected">Usual / expected</option></select></label>
           <label>Trend question<select value={draft.trendTrackingMode} onChange={(event) => update({ trendTrackingMode: event.target.value as TrendTrackingMode })}><option value="none">Off</option><option value="better_same_worse">Better / Same / Worse</option><option value="new_improving_same_worsening">New / Improving / Same / Worsening</option></select></label>
@@ -238,9 +240,8 @@ function RoutineItemEditor({
           <button type="button" className={`primary-button item-save-button${saveState === 'saved' ? ' item-save-button--success' : ''}`} disabled={!dirty || !valid || saveState === 'saving'} onClick={() => void save()}>{saveLabel}</button>
         </div>
       </div>
-    </details>
+    </section> : null}
     <span className={`item-save-status${saveState === 'saved' ? ' item-save-status--success' : ''}`} role="status" aria-live="polite">{saveState === 'saved' ? `✓ ${question.version.name} settings saved.` : saveState === 'saving' ? `Saving ${question.version.name} settings…` : ''}</span>
-    <button type="button" className="text-button text-button--danger" onClick={onRemove}>Remove from Routine</button>
   </article>
 }
 

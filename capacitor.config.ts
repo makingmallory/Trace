@@ -20,6 +20,9 @@ const config: CapacitorConfig = {
       style: 'LIGHT',
       backgroundColor: '#fffcfe',
     },
+    LocalNotifications: {
+      iconColor: '#c026d3',
+    },
   },
 }
 

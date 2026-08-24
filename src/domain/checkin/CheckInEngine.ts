@@ -97,6 +97,13 @@ export function localDateFor(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+export function isValidLocalDate(localDate: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(localDate)) return false
+  const [year, month, day] = localDate.split('-').map(Number)
+  const parsed = new Date(year, month - 1, day)
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day
+}
+
 export function currentTimeZone(): IANATimeZone | null {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || null
 }
@@ -249,6 +256,12 @@ export class CheckInEngine {
   }
 
   getOrCreateToday(localDate = localDateFor(this.now()), timezone = currentTimeZone()): Promise<CheckInSnapshot> {
+    return this.getOrCreateForDate(localDate, timezone)
+  }
+
+  getOrCreateForDate(localDate: string, timezone = currentTimeZone()): Promise<CheckInSnapshot> {
+    if (!isValidLocalDate(localDate)) return Promise.reject(new Error('Choose a valid Check-In date.'))
+    if (localDate > localDateFor(this.now())) return Promise.reject(new Error('Check-Ins cannot be created for a future date.'))
     const existing = this.dailyLoads.get(localDate)
     if (existing) return existing
     const pending = this.openDailyCheckIn(localDate, timezone)

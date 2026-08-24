@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { InMemoryDataRepository } from '../../data/local/InMemoryDataRepository.ts'
 import type { Category, InputType, TrackableOption, TrackableRecordSemantics, TrackableVersion } from '../models/index.ts'
-import { CheckInEngine, OccurrenceConflictError } from './CheckInEngine.ts'
+import { CheckInEngine, isValidLocalDate, localDateFor, OccurrenceConflictError } from './CheckInEngine.ts'
+import { buildDayDetail, HistoryEngine } from '../history/HistoryEngine.ts'
 
 const timestamp = '2026-08-10T21:00:00.000Z'
 
@@ -47,9 +48,93 @@ describe('CheckInEngine routine configuration', () => {
     expect(configuration.questions.map((question) => question.trackable.id)).toEqual(['score'])
     expect((await repository.getById('trackables', 'symptom'))?.active).toBe(true)
   })
+
+  it('keeps configured questions intact when their compact rows are reordered or another membership is removed', async () => {
+    const { engine, repository } = await setup()
+    const score = await engine.addTrackable('score')
+    const symptom = await engine.addTrackable('symptom')
+    await engine.updateItem(symptom.id, {
+      completionBehavior: 'expected',
+      trendTrackingMode: 'better_same_worse',
+      conditionalRule: { sourceTrackableId: 'score', operator: 'greaterThan', expectedValue: 2 },
+    })
+
+    await engine.moveItem(symptom.id, -1)
+    let configuration = await engine.getConfiguration()
+    expect(configuration.questions.map((question) => question.item.id)).toEqual([symptom.id, score.id])
+    expect(configuration.questions[0].item).toMatchObject({
+      completionBehavior: 'expected',
+      trendTrackingMode: 'better_same_worse',
+      conditionalRule: { sourceTrackableId: 'score', operator: 'greaterThan', expectedValue: 2 },
+    })
+
+    await engine.removeTrackable(score.id)
+    configuration = await engine.getConfiguration()
+    expect(configuration.questions.map((question) => question.item.id)).toEqual([symptom.id])
+    expect(configuration.questions[0].item).toMatchObject({
+      completionBehavior: 'expected',
+      trendTrackingMode: 'better_same_worse',
+    })
+    expect((await repository.getById('trackables', 'score'))?.active).toBe(true)
+  })
 })
 
 describe('CheckInEngine daily records', () => {
+  it('creates separate blank Check-Ins for yesterday and an older historical date', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('score')
+    const yesterday = await engine.getOrCreateForDate('2026-08-09', 'America/Chicago')
+    const older = await engine.getOrCreateForDate('2026-07-04', 'America/Chicago')
+    expect(yesterday.record).toMatchObject({ localDate: '2026-08-09', status: 'draft' })
+    expect(older.record).toMatchObject({ localDate: '2026-07-04', status: 'draft' })
+    expect(yesterday.observations).toEqual([])
+    expect(older.observations).toEqual([])
+    expect((await repository.getAll('logRecords')).map((record) => record.localDate).sort()).toEqual(['2026-07-04', '2026-08-09'])
+  })
+
+  it('reloads the selected date, preserves date-specific drafts, and edits an existing historical record', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('score')
+    const yesterday = await engine.getOrCreateForDate('2026-08-09', 'America/Chicago')
+    await engine.saveAnswer(yesterday.record.id, 'score', { answer: { state: 'answered', value: { kind: 'scale', value: 2 } } })
+    const older = await engine.getOrCreateForDate('2026-08-01', 'America/Chicago')
+    expect(older.record.id).not.toBe(yesterday.record.id)
+    expect(older.observations).toEqual([])
+    const reopened = await engine.getOrCreateForDate('2026-08-09', 'America/Chicago')
+    expect(reopened.record.id).toBe(yesterday.record.id)
+    expect(reopened.record.status).toBe('draft')
+    expect(reopened.observations[0].answer).toEqual({ state: 'answered', value: { kind: 'scale', value: 2 } })
+    expect((await repository.getAll('observations'))[0].logRecordId).toBe(yesterday.record.id)
+  })
+
+  it('saves and completes against the selected historical date so History becomes populated', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('score')
+    const historical = await engine.getOrCreateForDate('2026-08-02', 'America/Chicago')
+    await engine.saveAnswer(historical.record.id, 'score', { answer: { state: 'answered', value: { kind: 'scale', value: 4 } } })
+    await engine.complete(historical.record.id)
+    const historyData = await new HistoryEngine(repository).load()
+    const detail = buildDayDetail(historyData, '2026-08-02', '2026-08-10')
+    expect(detail.checkIn?.record).toMatchObject({ id: historical.record.id, localDate: '2026-08-02', status: 'completed' })
+    expect(detail.checkIn?.groups[0].answers[0].value).toBe('4')
+    expect(buildDayDetail(historyData, '2026-08-10', '2026-08-10').checkIn).toBeNull()
+  })
+
+  it('rejects invalid and future dates without creating a record', async () => {
+    const { engine, repository } = await setup()
+    await engine.addTrackable('score')
+    await expect(engine.getOrCreateForDate('2026-02-30', 'America/Chicago')).rejects.toThrow('valid Check-In date')
+    await expect(engine.getOrCreateForDate('2026-08-11', 'America/Chicago')).rejects.toThrow('future date')
+    expect(await repository.getAll('logRecords')).toEqual([])
+  })
+
+  it('derives local calendar dates without shifting around local midnight', () => {
+    expect(localDateFor(new Date(2026, 7, 10, 23, 59, 59))).toBe('2026-08-10')
+    expect(localDateFor(new Date(2026, 7, 11, 0, 0, 1))).toBe('2026-08-11')
+    expect(isValidLocalDate('2026-08-10')).toBe(true)
+    expect(isValidLocalDate('2026-02-30')).toBe(false)
+  })
+
   it('uses the latest options for today, preserves a removed selection, and keeps older dates on their recorded version', async () => {
     const { engine, repository } = await setup()
     await engine.addTrackable('locations')

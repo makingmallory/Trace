@@ -68,7 +68,7 @@ function detailsDraft(details: TrackableDetails): TrackableDraft {
   }
 }
 
-function IconField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+export function EmojiIconField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false)
   return <div className="form-field icon-field"><span>Icon</span><div className="icon-field__control"><input aria-label="Icon" value={value} onChange={(event) => onChange(firstGrapheme(event.target.value))} placeholder="🙂" /><button type="button" aria-label="Choose emoji" aria-expanded={open} onClick={() => setOpen((current) => !current)}>☺</button></div>{open ? <TraceEmojiPicker onSelect={(emoji) => { onChange(firstGrapheme(emoji)); setOpen(false) }} /> : null}</div>
 }
@@ -126,7 +126,7 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
 
   return <form className="trackable-form trackable-editor-form" onSubmit={submit}>
     <label className="form-field"><span>Name</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Morning energy" maxLength={100} required autoFocus={!details} /></label>
-    <IconField value={draft.icon?.type === 'emoji' ? draft.icon.value : iconGlyph(draft.icon)} onChange={(emoji) => setDraft((current) => ({ ...current, icon: emoji ? { type: 'emoji', value: emoji } : undefined }))} />
+    <EmojiIconField value={draft.icon?.type === 'emoji' ? draft.icon.value : iconGlyph(draft.icon)} onChange={(emoji) => setDraft((current) => ({ ...current, icon: emoji ? { type: 'emoji', value: emoji } : undefined }))} />
     <fieldset className="event-field-editor tracking-semantics"><legend>How is this tracked?</legend><div className="segmented"><button type="button" aria-pressed={draft.recordSemantics === 'daily_value'} onClick={() => setDraft({ ...draft, recordSemantics: 'daily_value', quickLogEnabled: false, quickLogTimingMode: undefined })}><strong>Daily Value</strong><small>One answer for the day</small></button><button type="button" aria-pressed={draft.recordSemantics === 'occurrence'} onClick={() => setDraft({ ...draft, recordSemantics: 'occurrence', inputType: 'boolean', defaultAnswer: undefined, quickLogTimingMode: draft.quickLogTimingMode ?? 'either' })}><strong>Occurrence</strong><small>Zero or more times per day</small></button></div></fieldset>
     {draft.recordSemantics === 'occurrence' && <label className="form-field checkbox-field"><span><input type="checkbox" checked={Boolean(draft.quickLogEnabled)} onChange={(event) => setDraft({ ...draft, quickLogEnabled: event.target.checked, quickLogTimingMode: event.target.checked ? draft.quickLogTimingMode ?? 'either' : undefined })} /> Available in Quick Log</span><small>Daily Check-In inclusion is configured separately in your routine.</small></label>}
     <div className="form-row">

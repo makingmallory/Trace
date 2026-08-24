@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { checkInEngine } from '../checkin/checkInEngine.ts'
 import { localDateFor } from '../../domain/checkin/CheckInEngine.ts'
 import { TodayEvents } from '../events/EventScreens.tsx'
-import { SharedPageHero } from '../../components/SharedPageHero.tsx'
+import { MainPageHeader } from '../../components/MainPageHeader.tsx'
 
 type TodayState = 'not_started' | 'draft' | 'completed'
 
@@ -30,7 +30,7 @@ export function HomeScreen() {
   const [configured, setConfigured] = useState<boolean | null>(null)
   useEffect(() => { void Promise.all([checkInEngine.getTodayState(), checkInEngine.getConfiguration()]).then(([todayState, configuration]) => { setState(todayState); setConfigured(Boolean(configuration.routine && configuration.questions.length)) }) }, [])
   const checkInPath = configured ? '/check-in' : '/settings/nightly-check-in'
-  return <section className="screen home-screen"><SharedPageHero><header className="screen__heading"><h1>{greeting()}</h1><p className="screen__description">{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())}</p></header></SharedPageHero><div className="home-foundation">
+  return <section className="screen main-page-screen home-screen"><MainPageHeader title={greeting()} subtitle={new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())} artwork /><div className="home-foundation">
     <div className="planned-actions">
       {configured ? <Link className="planned-action home-action home-action--checkin" to="/check-in"><span aria-hidden="true">✓</span><div><strong>Check in</strong><small>Daily trackables</small></div><b aria-hidden="true">›</b></Link> : <Link className="planned-action home-action home-action--checkin" to="/settings/nightly-check-in"><span aria-hidden="true">✓</span><div><strong>Set up Check-In</strong><small>Choose daily trackables</small></div><b aria-hidden="true">›</b></Link>}
       <Link className="planned-action home-action home-action--quick-log" to="/quick-log"><span aria-hidden="true">＋</span><div><strong>Quick Log</strong><small>Anything else</small></div><b aria-hidden="true">›</b></Link>

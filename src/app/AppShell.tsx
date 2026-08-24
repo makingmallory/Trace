@@ -8,9 +8,10 @@ export function AppShell() {
   const isTrackablesCollection = pathname === '/trackables' || pathname === '/trackables/add'
   const isCheckIn = pathname === '/check-in' || /^\/history\/check-in\/\d{4}-\d{2}-\d{2}$/.test(pathname)
   const isHistory = pathname === '/history'
-  const hasSharedHero = pathname === '/' || isHistory
+  const isMainPage = ['/', '/history', '/trends', '/trackables', '/settings'].includes(pathname)
+  const hasDecorativeHeader = pathname === '/' || isHistory
   return (
-    <div className={`app-shell${isTrackablesCollection ? ' app-shell--trackables-collection' : ''}${isCheckIn ? ' app-shell--checkin' : ''}${isHistory ? ' app-shell--history' : ''}${hasSharedHero ? ' app-shell--shared-hero' : ''}`}>
+    <div className={`app-shell${isTrackablesCollection ? ' app-shell--trackables-collection' : ''}${isCheckIn ? ' app-shell--checkin' : ''}${isHistory ? ' app-shell--history' : ''}${isMainPage ? ' app-shell--main-page' : ''}${hasDecorativeHeader ? ' app-shell--decorative-header' : ''}`}>
       <SyncCoordinator />
       <NativeAppCoordinator />
       <header className="app-header">

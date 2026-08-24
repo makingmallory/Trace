@@ -50,6 +50,13 @@ export interface TrackableDraft {
   reminder?: TrackableReminderConfig
 }
 
+export interface CategoryDraft {
+  name: string
+  icon?: IconReference
+  color?: string
+  active?: boolean
+}
+
 export interface TrackableFieldDetails {
   field: TrackableField
   trackable: Trackable
@@ -182,12 +189,17 @@ export class TrackableEngine {
 
   private async seedCategories(): Promise<void> {
     for (const item of trackablePresets) validateDraft(this.presetDraft(item))
-    if ((await this.repository.getAll('categories')).length > 0) return
+    const existing = await this.repository.getAll('categories')
     const timestamp = this.timestamp()
-    await this.repository.saveMany('categories', categoryPresets.map((preset) => ({
-      id: preset.id, name: preset.name, sortOrder: preset.sortOrder, active: true,
+    if (existing.length === 0) await this.repository.saveMany('categories', categoryPresets.map((preset) => ({
+      id: preset.id, name: preset.name, sortOrder: preset.sortOrder, active: true, icon: preset.icon,
       createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1,
     })))
+    else {
+      const legacyIcons = new Map(categoryPresets.map((preset) => [preset.id, preset.icon]))
+      const upgrades = existing.filter((category) => !category.icon && legacyIcons.has(category.id)).map((category) => ({ ...category, icon: legacyIcons.get(category.id), updatedAt: timestamp, revision: category.revision + 1 }))
+      if (upgrades.length) await this.repository.saveMany('categories', upgrades)
+    }
   }
 
   async getLibrary(): Promise<TrackableLibrary> {
@@ -217,14 +229,16 @@ export class TrackableEngine {
     }
   }
 
-  async createCategory(name: string): Promise<Category> {
+  async createCategory(input: string | CategoryDraft): Promise<Category> {
     await this.initialize()
-    const cleanName = name.trim()
+    const draft = typeof input === 'string' ? { name: input } : input
+    const cleanName = draft.name.trim()
     if (!cleanName) throw new TrackableValidationError(['Category name is required.'])
     const categories = await this.repository.getAll('categories')
     if (categories.some((category) => category.name.toLowerCase() === cleanName.toLowerCase() && !category.deletedAt)) throw new TrackableValidationError(['Category names must be unique.'])
     const timestamp = this.timestamp()
-    const category: Category = { id: this.createId(), name: cleanName, sortOrder: categories.length, active: true, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+    if (draft.icon && !isSupportedIcon(draft.icon)) throw new TrackableValidationError(['Choose a valid category icon.'])
+    const category: Category = { id: this.createId(), name: cleanName, sortOrder: categories.length, active: draft.active ?? true, icon: draft.icon ?? { type: 'emoji', value: '✨' }, ...(draft.color ? { color: normalizeCategoryColor(draft.color) } : {}), createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
     await this.repository.save('categories', category)
     return category
   }
@@ -246,6 +260,16 @@ export class TrackableEngine {
   async setCategoryColor(id: string, color: string | undefined): Promise<void> {
     const category = await this.requireCategory(id)
     await this.repository.save('categories', { ...category, ...(color ? { color: normalizeCategoryColor(color) } : { color: undefined }), updatedAt: this.timestamp(), revision: category.revision + 1 })
+  }
+
+  async updateCategory(id: string, draft: CategoryDraft): Promise<void> {
+    const category = await this.requireCategory(id)
+    const cleanName = draft.name.trim()
+    if (!cleanName) throw new TrackableValidationError(['Category name is required.'])
+    const categories = await this.repository.getAll('categories')
+    if (categories.some((item) => item.id !== id && item.name.toLowerCase() === cleanName.toLowerCase() && !item.deletedAt)) throw new TrackableValidationError(['Category names must be unique.'])
+    if (draft.icon && !isSupportedIcon(draft.icon)) throw new TrackableValidationError(['Choose a valid category icon.'])
+    await this.repository.save('categories', { ...category, name: cleanName, icon: draft.icon ?? category.icon ?? { type: 'emoji', value: '✨' }, ...(draft.color ? { color: normalizeCategoryColor(draft.color) } : { color: undefined }), active: draft.active ?? category.active, updatedAt: this.timestamp(), revision: category.revision + 1 })
   }
 
   async reorderCategory(id: string, direction: -1 | 1): Promise<void> {
