@@ -5,9 +5,9 @@ import { MemoryRouter } from 'react-router-dom'
 import type { Category } from '../../domain/models/index.ts'
 import type { TrackableDetails } from '../../domain/trackables/TrackableEngine.ts'
 import { getPresetById, presetPacks, trackablePresets } from '../../presets/trackablePresets.ts'
-import { AddTrackableScreen, ManageTrackablesScreen, PackCard, PresetCard } from './TrackablesScreen.tsx'
+import { AddTrackableScreen, BrowseSection, ManageTrackablesScreen, PackCard, PresetCard } from './TrackablesScreen.tsx'
 import { TrackableEditor } from './TrackableEditor.tsx'
-import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, isPresetAlreadyActive } from './trackableUi.ts'
+import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, isPresetAlreadyActive, presetIcon } from './trackableUi.ts'
 
 vi.mock('./trackableEngine.ts', () => ({ trackableEngine: {} }))
 
@@ -68,26 +68,37 @@ describe('Trackable preset browsing', () => {
     expect(preset.id).not.toBe(active[0].trackable.id)
   })
 
-  it('renders touch-accessible pack disclosure and item selection', () => {
-    const markup = renderToStaticMarkup(createElement(PackCard, { pack: presetPacks[0], onAdd: () => undefined, busy: false }))
-    expect(markup).toContain('<details>')
-    expect(markup).toContain('<summary>View items</summary>')
-    expect(markup.match(/type="checkbox"/g)).toHaveLength(presetPacks[0].presetIds.length)
+  it('uses compact expandable browsing sections rather than separate pack selection controls', () => {
+    const collapsed = renderToStaticMarkup(createElement(BrowseSection, { id: 'test', icon: '✨', title: 'Skin', count: 2, expanded: false, onToggle: () => undefined }, createElement('p', {}, 'Hidden item')))
+    const expanded = renderToStaticMarkup(createElement(BrowseSection, { id: 'test', icon: '✨', title: 'Skin', count: 2, expanded: true, onToggle: () => undefined }, createElement('p', {}, 'Visible item')))
+    expect(collapsed).toContain('aria-expanded="false"')
+    expect(collapsed).not.toContain('Hidden item')
+    expect(expanded).toContain('aria-expanded="true"')
+    expect(expanded).toContain('Visible item')
   })
 
-  it('disables ready-made Trackables already present in a Starter Pack', () => {
+  it('offers only missing pack items through an Add All or Add Remaining action', () => {
+    const allMissing = renderToStaticMarkup(createElement(PackCard, { pack: presetPacks[0], addedPresetIds: [], onAdd: () => undefined, onToggle: () => undefined }))
     const addedId = presetPacks[0].presetIds[0]
-    const markup = renderToStaticMarkup(createElement(PackCard, { pack: presetPacks[0], addedPresetIds: [addedId], onAdd: () => undefined, busy: false }))
-    expect(markup).toContain('disabled=""')
-    expect(markup).toContain('Added')
-    expect(markup).toContain(`Add ${presetPacks[0].presetIds.length - 1} selected`)
+    const remaining = renderToStaticMarkup(createElement(PackCard, { pack: presetPacks[0], addedPresetIds: [addedId], onAdd: () => undefined, onToggle: () => undefined }))
+    const complete = renderToStaticMarkup(createElement(PackCard, { pack: presetPacks[0], addedPresetIds: presetPacks[0].presetIds, onAdd: () => undefined, onToggle: () => undefined }))
+    expect(allMissing).toContain('Add All')
+    expect(remaining).toContain('Add Remaining')
+    expect(complete).not.toContain('browse-section__bulk-action')
   })
 
-  it('disables the add action for an already-added library item', () => {
+  it('keeps the Add control stable while allowing an Added item to be toggled off', () => {
     const preset = getPresetById('preset.skin.acne-severity')!
     const markup = renderToStaticMarkup(createElement(PresetCard, { preset, added: true, busy: false, onAdd: () => undefined }))
-    expect(markup).toContain('<button class="tile-action" type="button" disabled="">Added</button>')
-    expect(markup).not.toContain('Add another')
+    expect(markup).toContain('<button class="tile-action is-added" type="button">Added</button>')
+    expect(markup).not.toContain('disabled=""')
+  })
+
+  it('uses the current category icon for ordinary presets while retaining explicit preset art', () => {
+    const category = { icon: { type: 'emoji' as const, value: '🌿' } }
+    const ordinary = getPresetById('preset.skin.acne-severity')!
+    expect(presetIcon(ordinary, category)).toEqual(category.icon)
+    expect(presetIcon({ ...ordinary, icon: { type: 'emoji', value: '✨' } }, category)).toEqual({ type: 'emoji', value: '✨' })
   })
 
   it('uses Trackable Library terminology and navigation', () => {

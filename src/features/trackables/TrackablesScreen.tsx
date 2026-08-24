@@ -5,7 +5,7 @@ import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { getPresetById, presetPacks, trackablePresets, type PresetPack, type TrackablePreset } from '../../presets/trackablePresets.ts'
 import { EmojiIconField, TrackableEditor } from './TrackableEditor.tsx'
 import { trackableEngine } from './trackableEngine.ts'
-import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, inputTypes, isPresetAlreadyActive } from './trackableUi.ts'
+import { activeTrackableForPreset, filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, inputTypes, presetIcon } from './trackableUi.ts'
 import { ActionIcon } from '../../components/ActionIcons.tsx'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
 import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
@@ -22,7 +22,7 @@ function useTrackableLibrary() {
 }
 
 function Page({ eyebrow, title, description, backTo = '/trackables', children }: { eyebrow: string; title: string; description: string; backTo?: string; children: ReactNode }) {
-  return <section className="screen trackables-screen"><header className="subpage-header"><InlineBackHeader to={backTo} label={eyebrow} ariaLabel="Back" /><h1>{title}</h1><p className="screen__description">{description}</p></header>{children}</section>
+  return <section className="screen trackables-screen"><header className="trace-page-header subpage-header"><InlineBackHeader to={backTo} label={eyebrow} ariaLabel="Back" /><h1>{title}</h1><p className="screen__description">{description}</p></header>{children}</section>
 }
 
 function Loading({ error }: { error: string }) {
@@ -78,7 +78,7 @@ export function TrackablesScreen() {
     <MainPageHeader eyebrow="Your collection" title="Trackables" subtitle="Little pieces of your life, ready whenever you want to check in." actions={<><Link className="bubble-action" to="/trackables/add" aria-label="Add Trackable" title="Add Trackable"><ActionIcon name="add" /></Link><Link className="bubble-action" to="/trackables/manage" aria-label="Manage Trackables" title="Manage Trackables"><ActionIcon name="settings" /></Link></>} footer={<p className="collection-count"><strong>{library.active.length}</strong> active Trackable{library.active.length === 1 ? '' : 's'}</p>} />
     {library.active.length > 0 ? <TrackableFilterControls categories={library.categories.filter((category) => category.active)} search={search} categoryId={categoryId} onSearchChange={setSearch} onCategoryChange={setCategoryId} searchLabel="Search My Trackables" placeholder="Search trackables…" /> : null}
     {notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}
-      {groups.length === 0 ? (searching || categoryId !== 'all') ? <div className="empty-state"><span>◇</span><h2>No Trackables Found</h2><p>Try a different name or category.</p></div> : <div className="empty-state"><span>✦</span><h2>Your collection is ready to grow</h2><p>Start with the Trackable Library, a Starter Pack, or something completely your own.</p><Link className="primary-button button-link" to="/trackables/add">Add your first Trackable</Link></div> : <div className="collection-groups">{groups.map(({ category, items }) => { const isOpen = searching || categoryId !== 'all' || (openCategories ? openCategories.has(category.id) : category.id === defaultOpenId); return <section className={`collection-group${isOpen ? ' is-open' : ''}`} style={categoryAccentStyle(category)} key={category.id}><button className="collection-group__heading" type="button" aria-expanded={isOpen} aria-controls={`category-${category.id}`} onClick={() => toggleCategory(category.id)}><span className="collection-group__title"><strong>{category.name}</strong><span>{items.length}</span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9.5 5 5 5-5" /></svg></button>{isOpen ? <div className="collection-grid" id={`category-${category.id}`}>{items.map((details) => <TrackableCard key={details.trackable.id} details={details} onArchive={() => void archive(details)} />)}</div> : null}</section> })}</div>}
+      {groups.length === 0 ? (searching || categoryId !== 'all') ? <div className="empty-state"><span>◇</span><h2>No Trackables Found</h2><p>Try a different name or category.</p></div> : <div className="empty-state"><span>✦</span><h2>Your collection is ready to grow</h2><p>Start with the Trackable Library, a Starter Pack, or something completely your own.</p><Link className="primary-button button-link" to="/trackables/add">Add your first Trackable</Link></div> : <div className="collection-groups">{groups.map(({ category, items }) => { const isOpen = searching || categoryId !== 'all' || (openCategories ? openCategories.has(category.id) : category.id === defaultOpenId); return <section className={`collection-group${isOpen ? ' is-open' : ''}`} style={categoryAccentStyle(category)} key={category.id}><button className="collection-group__heading" type="button" aria-expanded={isOpen} aria-controls={`category-${category.id}`} onClick={() => toggleCategory(category.id)}><span className="collection-group__category-icon" aria-hidden="true">{iconGlyph(category.icon)}</span><span className="collection-group__title"><strong>{category.name}</strong><span>{items.length}</span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9.5 5 5 5-5" /></svg></button>{isOpen ? <div className="collection-grid" id={`category-${category.id}`}>{items.map((details) => <TrackableCard key={details.trackable.id} details={details} onArchive={() => void archive(details)} />)}</div> : null}</section> })}</div>}
   </section>
 }
 
@@ -99,13 +99,24 @@ function AddChoiceIcon({ name }: { name: typeof addChoices[number]['icon'] }) {
 
 export function AddTrackableScreen() {
   return <section className="screen trackables-screen add-trackable-screen">
-    <header className="add-trackable-screen__header page-header"><Link className="add-trackable-screen__back" to="/trackables"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7" /></svg><span>Add Trackable</span></Link><h1>Choose your<br />starting point</h1><p className="screen__description">Browse one ready-made Trackable, choose a collection, or make something unique.</p></header>
+    <header className="trace-page-header add-trackable-screen__header page-header"><Link className="add-trackable-screen__back" to="/trackables"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7" /></svg><span>Add Trackable</span></Link><h1>Choose your<br />starting point</h1><p className="screen__description">Browse one ready-made Trackable, choose a collection, or make something unique.</p></header>
     <div className="choice-grid add-trackable-choices">{addChoices.map((choice) => <Link className="choice-card" to={choice.to} key={choice.to}><span className="choice-card__icon" aria-hidden="true"><AddChoiceIcon name={choice.icon} /></span><div><h2>{choice.title}</h2><p>{choice.description}</p></div><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg></b></Link>)}</div>
   </section>
 }
 
-export function PresetCard({ preset, added, busy, onAdd }: { preset: TrackablePreset; added: boolean; busy: boolean; onAdd: () => void }) {
-  return <article className="preset-tile"><span className="collection-card__icon" aria-hidden="true">{iconGlyph(preset.icon)}</span><div><h3>{preset.name}</h3><p>{inputTypes.find((type) => type.value === preset.inputType)?.label}</p></div>{added && <span className="added-badge">✓ Added</span>}<button className="tile-action" type="button" disabled={busy || added} onClick={onAdd}>{busy ? 'Adding…' : added ? 'Added' : 'Add'}</button></article>
+export function AddedToggle({ added, busy, onClick }: { added: boolean; busy: boolean; onClick: () => void }) {
+  return <button className={`tile-action${added ? ' is-added' : ''}`} type="button" disabled={busy} onClick={onClick}>{busy ? 'Saving…' : added ? 'Added' : 'Add'}</button>
+}
+
+export function PresetCard({ preset, category, added, busy, onAdd }: { preset: TrackablePreset; category?: { icon?: TrackablePreset['icon'] }; added: boolean; busy: boolean; onAdd: () => void }) {
+  return <article className="preset-tile preset-list-row"><span className="collection-card__icon" aria-hidden="true">{iconGlyph(presetIcon(preset, category))}</span><div><h3>{preset.name}</h3><p>{inputTypes.find((type) => type.value === preset.inputType)?.label}</p></div><AddedToggle added={added} busy={busy} onClick={onAdd} /></article>
+}
+
+export function BrowseSection({ id, icon, title, count, description, expanded, onToggle, action, children, accent }: { id: string; icon: string; title: string; count: number; description?: string; expanded: boolean; onToggle: () => void; action?: ReactNode; children?: ReactNode; accent?: CSSProperties }) {
+  return <section className={`browse-section${expanded ? ' is-open' : ''}`} style={accent}>
+    <div className="browse-section__header"><button className="browse-section__trigger" type="button" aria-expanded={expanded} aria-controls={id} onClick={onToggle}><span className="browse-section__icon" aria-hidden="true">{icon}</span><span className="browse-section__copy"><strong>{title}</strong>{description ? <small>{description}</small> : null}</span><span className="browse-section__count">{count}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9.5 5 5 5-5" /></svg></button>{action}</div>
+    {expanded ? <div className="browse-section__items" id={id}>{children}</div> : null}
+  </section>
 }
 
 export function TrackableLibraryScreen() {
@@ -114,47 +125,62 @@ export function TrackableLibraryScreen() {
   const [categoryId, setCategoryId] = useState('all')
   const [notice, setNotice] = useState('')
   const [busyId, setBusyId] = useState('')
+  const [openCategories, setOpenCategories] = useState<ReadonlySet<string>>(() => new Set())
   const groups = useMemo(() => library ? filterPresetGroups(trackablePresets, library.categories, search, categoryId) : [], [library, search, categoryId])
   if (!library) return <Loading error={error} />
-  const activeTrackables = library.active
+  const currentLibrary = library
+  const autoExpand = Boolean(search.trim()) || categoryId !== 'all'
 
-  async function add(preset: TrackablePreset) {
-    if (isPresetAlreadyActive(preset, activeTrackables)) return
+  function toggleCategory(id: string) { setOpenCategories((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next }) }
+  async function togglePreset(preset: TrackablePreset) {
+    const existing = activeTrackableForPreset(preset, currentLibrary.active)
     setBusyId(preset.id); setError(''); setNotice('')
-    try { await trackableEngine.createFromPreset(preset.id); await refresh(); setNotice(`${preset.name} added to your collection.`) }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not add this ready-made Trackable.') }
+    try {
+      if (existing) { await trackableEngine.setTrackableActive(existing.trackable.id, false); setNotice(`${preset.name} removed from your collection.`) }
+      else { await trackableEngine.createFromPreset(preset.id); setNotice(`${preset.name} added to your collection.`) }
+      await refresh()
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update this ready-made Trackable.') }
     finally { setBusyId('') }
   }
 
   return <Page eyebrow="Add Trackable" title="Trackable Library" description="Search the ready-made library or wander through a category." backTo="/trackables/add">
-    <TrackableFilterControls categories={library.categories} search={search} categoryId={categoryId} onSearchChange={setSearch} onCategoryChange={setCategoryId} searchLabel="Search Trackable Library" placeholder="Try mood, sleep, pain…" />
+    <TrackableFilterControls categories={currentLibrary.categories} search={search} categoryId={categoryId} onSearchChange={setSearch} onCategoryChange={setCategoryId} searchLabel="Search Trackable Library" placeholder="Try mood, sleep, pain…" />
     {notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}
-    {groups.length === 0 ? <div className="empty-state"><span>◇</span><h2>No Trackables found</h2><p>Try a different search or category.</p></div> : <div className="preset-groups">{groups.map((group) => <section className="preset-group" key={group.category.id}><div className="collection-group__heading"><h2>{group.category.name}</h2><span>{group.presets.length}</span></div><div className="preset-grid">{group.presets.map((preset) => <PresetCard key={preset.id} preset={preset} added={isPresetAlreadyActive(preset, activeTrackables)} busy={busyId === preset.id} onAdd={() => void add(preset)} />)}</div></section>)}</div>}
-    {busyId && <p className="sr-only" role="status">Adding Trackable…</p>}
+    {groups.length === 0 ? <div className="empty-state"><span>◇</span><h2>No Trackables found</h2><p>Try a different search or category.</p></div> : <div className="preset-groups browse-section-stack">{groups.map((group) => { const expanded = autoExpand || openCategories.has(group.category.id); return <BrowseSection key={group.category.id} id={`library-category-${group.category.id}`} icon={iconGlyph(group.category.icon)} title={group.category.name} count={group.presets.length} expanded={expanded} onToggle={() => toggleCategory(group.category.id)} accent={categoryAccentStyle(group.category)}>{group.presets.map((preset) => <PresetCard key={preset.id} preset={preset} category={group.category} added={Boolean(activeTrackableForPreset(preset, currentLibrary.active))} busy={busyId === preset.id} onAdd={() => void togglePreset(preset)} />)}</BrowseSection> })}</div>}
   </Page>
 }
 
-export function PackCard({ pack, onAdd, busy, addedPresetIds = [] }: { pack: PresetPack; onAdd: (presetIds: readonly string[]) => void; busy: boolean; addedPresetIds?: readonly string[] }) {
-  const [selected, setSelected] = useState<readonly string[]>(() => pack.presetIds.filter((id) => !addedPresetIds.includes(id)))
-  const names = pack.presetIds.map((id) => getPresetById(id)).filter((item): item is TrackablePreset => Boolean(item))
-  useEffect(() => setSelected((current) => current.filter((id) => !addedPresetIds.includes(id))), [addedPresetIds])
-  function toggle(id: string) { if (!addedPresetIds.includes(id)) setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]) }
-  return <article className="pack-card pack-card--expanded"><div><h2>{pack.name}</h2><p>{pack.description}</p><span>{pack.presetIds.length} Trackables</span></div><details><summary>View items</summary><fieldset><legend className="sr-only">Choose items from {pack.name}</legend>{names.map((item) => { const added = addedPresetIds.includes(item.id); return <label key={item.id} className={added ? 'is-added' : ''}><input type="checkbox" checked={!added && selected.includes(item.id)} disabled={added} onChange={() => toggle(item.id)} /><span>{item.name}</span>{added && <b>Added</b>}</label> })}</fieldset>{pack.futureItems && <p className="pack-future">Later milestones: {pack.futureItems.join(', ')}</p>}</details><button className="primary-button" disabled={busy || selected.length === 0} onClick={() => onAdd(selected)}>{busy ? 'Adding…' : selected.length === 0 ? 'All added' : `Add ${selected.length} selected`}</button></article>
+export function PackCard({ pack, onAdd, onToggle, busyId = '', addedPresetIds = [], categories = [] }: { pack: PresetPack; onAdd: (presetIds: readonly string[]) => void; onToggle: (preset: TrackablePreset) => void; busyId?: string; addedPresetIds?: readonly string[]; categories?: readonly { id: string; icon?: TrackablePreset['icon'] }[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const presets = pack.presetIds.map((id) => getPresetById(id)).filter((item): item is TrackablePreset => Boolean(item))
+  const missing = presets.filter((preset) => !addedPresetIds.includes(preset.id))
+  const action = missing.length ? <button className="browse-section__bulk-action" type="button" disabled={busyId === pack.id} onClick={() => onAdd(missing.map((preset) => preset.id))}>{busyId === pack.id ? 'Adding…' : missing.length === presets.length ? 'Add All' : 'Add Remaining'}</button> : null
+  return <BrowseSection id={`starter-pack-${pack.id}`} icon="✦" title={pack.name} count={presets.length} description={pack.description} expanded={expanded} onToggle={() => setExpanded((current) => !current)} action={action}>{presets.map((preset) => <PresetCard key={preset.id} preset={preset} category={categories.find((category) => category.id === preset.categoryId)} added={addedPresetIds.includes(preset.id)} busy={busyId === preset.id} onAdd={() => onToggle(preset)} />)}{pack.futureItems ? <p className="pack-future">Later milestones: {pack.futureItems.join(', ')}</p> : null}</BrowseSection>
 }
 
 export function StarterPacksScreen() {
   const { library, error, setError, refresh } = useTrackableLibrary()
   const [busyId, setBusyId] = useState('')
   const [notice, setNotice] = useState('')
-  const addedPresetIds = useMemo(() => library ? trackablePresets.filter((preset) => isPresetAlreadyActive(preset, library.active)).map((preset) => preset.id) : [], [library])
-  async function add(pack: PresetPack, ids: readonly string[]) {
-    setBusyId(pack.id); setError(''); setNotice('')
-    try { for (const id of ids) await trackableEngine.createFromPreset(id); await refresh(); setNotice(`${ids.length} Trackables from ${pack.name} added.`) }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not add this pack.') }
+  const addedPresetIds = useMemo(() => library ? trackablePresets.filter((preset) => Boolean(activeTrackableForPreset(preset, library.active))).map((preset) => preset.id) : [], [library])
+  if (!library) return <Loading error={error} />
+  const currentLibrary = library
+  async function togglePreset(preset: TrackablePreset) {
+    const existing = activeTrackableForPreset(preset, currentLibrary.active)
+    setBusyId(preset.id); setError(''); setNotice('')
+    try { if (existing) { await trackableEngine.setTrackableActive(existing.trackable.id, false); setNotice(`${preset.name} removed from your collection.`) } else { await trackableEngine.createFromPreset(preset.id); setNotice(`${preset.name} added to your collection.`) }; await refresh() }
+    catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update this Starter Pack item.') }
     finally { setBusyId('') }
   }
-  if (!library) return <Loading error={error} />
-  return <Page eyebrow="Add Trackable" title="Starter Packs" description="Curated little collections—take the whole set or choose just what fits." backTo="/trackables/add">{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}<div className="packs-stack">{presetPacks.map((pack) => <PackCard key={pack.id} pack={pack} busy={busyId === pack.id} addedPresetIds={addedPresetIds} onAdd={(ids) => void add(pack, ids)} />)}</div></Page>
+  async function addMissing(pack: PresetPack, ids: readonly string[]) {
+    const missing = ids.filter((id) => !addedPresetIds.includes(id))
+    if (!missing.length) return
+    setBusyId(pack.id); setError(''); setNotice('')
+    try { for (const id of missing) await trackableEngine.createFromPreset(id); await refresh(); setNotice(`${missing.length} Trackable${missing.length === 1 ? '' : 's'} from ${pack.name} added.`) }
+    catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not add this Starter Pack.') }
+    finally { setBusyId('') }
+  }
+  return <Page eyebrow="Add Trackable" title="Starter Packs" description="Curated little collections—take the whole set or choose just what fits." backTo="/trackables/add">{notice && <p className="notice notice--success" role="status">{notice}</p>}{error && <p className="notice notice--error" role="alert">{error}</p>}<div className="packs-stack browse-section-stack">{presetPacks.map((pack) => <PackCard key={pack.id} pack={pack} busyId={busyId} addedPresetIds={addedPresetIds} categories={currentLibrary.categories} onToggle={(preset) => void togglePreset(preset)} onAdd={(ids) => void addMissing(pack, ids)} />)}</div></Page>
 }
 
 export function CustomTrackableScreen() {

@@ -290,7 +290,8 @@ export class TrackableEngine {
     const item = getPresetById(presetId)
     if (!item) throw new TrackableValidationError(['Ready-made Trackable was not found.'])
     if (await this.isPresetActive(presetId)) throw new TrackableValidationError([`${item.name} is already in your active Trackables.`])
-    return this.createTrackable(this.presetDraft(item))
+    const category = await this.requireCategory(item.categoryId)
+    return this.createTrackable({ ...this.presetDraft(item), icon: item.icon ?? category.icon })
   }
 
   async isPresetActive(presetId: string): Promise<boolean> {

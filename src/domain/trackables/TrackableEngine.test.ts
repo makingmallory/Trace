@@ -28,6 +28,18 @@ describe('TrackableEngine', () => {
     expect(created.options.map((option) => option.label)).toContain('Red')
   })
 
+  it('uses the saved category icon for new presets without changing existing custom icons', async () => {
+    const { engine } = setup()
+    await engine.initialize()
+    await engine.updateCategory('category.skin', { name: 'Skin', icon: { type: 'emoji', value: '🌿' }, active: true })
+    const created = await engine.createFromPreset('preset.skin.acne-severity')
+    expect(created.trackable.icon).toEqual({ type: 'emoji', value: '🌿' })
+
+    const custom = await engine.createTrackable({ ...customDraft, categoryId: 'category.skin', icon: { type: 'emoji', value: '🪷' } })
+    await engine.updateCategory('category.skin', { name: 'Skin', icon: { type: 'emoji', value: '✨' }, active: true })
+    expect((await engine.getDetails(custom.trackable.id)).trackable.icon).toEqual({ type: 'emoji', value: '🪷' })
+  })
+
   it('creates and validates a custom Trackable without losing zero scale bounds', async () => {
     const { engine } = setup()
     const created = await engine.createTrackable(customDraft)

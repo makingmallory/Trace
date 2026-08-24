@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   buildCalendarSummaries, buildDayDetail, calendarDates, calendarMetricOptions,
   groupHistoryResults, historySearchSuggestions, monthKey, projectCalendarMetric, searchHistory, sliceHistoryGroup,
-  shiftLocalDate, shiftMonth, weekDates, type CalendarDaySummary, type HistoryAgendaDay,
+  shiftLocalDate, weekDates, type CalendarDaySummary, type HistoryAgendaDay,
   type CalendarMetricIdentity, type CalendarMetricOption, type HistoryData, type HistorySearchFilters, type HistorySearchResponse, type HistorySearchResult, type MetricDayValue,
 } from '../../domain/history/HistoryEngine.ts'
 import { localDateFor } from '../../domain/checkin/CheckInEngine.ts'
@@ -13,6 +13,12 @@ import { historyEngine } from './historyEngine.ts'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 import { MainPageHeader } from '../../components/MainPageHeader.tsx'
 import { EditIcon, RecordAction, TrashIcon } from '../../components/RecordActions.tsx'
+import { historyReturnPath, quickLogEditPath } from '../events/quickLogNavigation.ts'
+import {
+  calendarPeriodSelection, currentPeriodLabel, horizontalSwipeDirection, selectedDaySelection,
+  shouldRevealSelectedDay as shouldRevealForIntent, swipeAmount,
+  type CalendarSelectionIntent, type CalendarView, type SwipeDirection, type SwipePoint,
+} from './historyNavigation.ts'
 
 const validDate = /^\d{4}-\d{2}-\d{2}$/
 
@@ -26,7 +32,6 @@ function statusLabel(status: 'draft' | 'completed' | null): string {
   return ''
 }
 
-type CalendarView = 'month' | 'week'
 type SearchFilterDraft = { from: string; to: string; recordType: 'all' | 'event' | 'check-in' }
 
 const emptySearchFilters: SearchFilterDraft = { from: '', to: '', recordType: 'all' }
@@ -58,6 +63,32 @@ function PaletteIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.25a2.25 2.25 0 0 0 0-4.5h-.75a1.75 1.75 0 0 1 0-3.5H16A5 5 0 0 0 21 8c0-2.75-4.03-5-9-5Z" /><circle cx="7.5" cy="10" r=".75" /><circle cx="10" cy="6.75" r=".75" /><circle cx="15" cy="7" r=".75" /></svg>
 }
 
+const swipeControlSelector = 'button, a, input, select, textarea, label, summary, details, [role="button"], [contenteditable="true"]'
+
+function useHorizontalSwipe(onSwipe: (direction: SwipeDirection) => void) {
+  const startRef = useRef<(SwipePoint & { pointerId: number }) | null>(null)
+
+  function onPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    const target = event.target
+    if (!(target instanceof Element) || target.closest(swipeControlSelector)) return
+    startRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+  }
+
+  function onPointerUp(event: ReactPointerEvent<HTMLElement>) {
+    const start = startRef.current
+    startRef.current = null
+    if (!start || start.pointerId !== event.pointerId) return
+    const direction = horizontalSwipeDirection(start, { x: event.clientX, y: event.clientY })
+    if (direction) onSwipe(direction)
+  }
+
+  function onPointerCancel(event: ReactPointerEvent<HTMLElement>) {
+    if (startRef.current?.pointerId === event.pointerId) startRef.current = null
+  }
+
+  return { onPointerDown, onPointerUp, onPointerCancel }
+}
+
 export function HistoryScreen() {
   const today = useMemo(() => localDateFor(new Date()), [])
   const [searchParams, setSearchParams] = useSearchParams()
@@ -82,6 +113,7 @@ export function HistoryScreen() {
   const [undo, setUndo] = useState<{ recordId: string; label: string } | null>(null)
   const [shouldRevealSelectedDay, setShouldRevealSelectedDay] = useState(false)
   const [error, setError] = useState('')
+  const calendarSwipeHandlers = useHorizontalSwipe((direction) => moveCalendar(swipeAmount(direction)))
 
   const load = () => void historyEngine.load().then(setData).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not load History.'))
   useEffect(load, [])
@@ -134,11 +166,11 @@ export function HistoryScreen() {
     })
   }, [detail, shouldRevealSelectedDay])
 
-  function selectDate(localDate: string) {
+  function selectDate(localDate: string, intent: CalendarSelectionIntent = 'manual-day-selection') {
     setSelectedDate(localDate)
     setVisibleMonth(monthKey(localDate))
     setSearchParams({ date: localDate }, { replace: true })
-    setShouldRevealSelectedDay(true)
+    setShouldRevealSelectedDay(shouldRevealForIntent(intent))
   }
 
   function handleCalendarKey(event: KeyboardEvent<HTMLButtonElement>, localDate: string) {
@@ -219,14 +251,17 @@ export function HistoryScreen() {
   }
 
   function changeView(view: CalendarView) {
+    setShouldRevealSelectedDay(false)
     setCalendarView(view)
     if (view === 'month') setVisibleMonth(monthKey(selectedDate))
   }
 
   function moveCalendar(amount: -1 | 1) {
-    if (calendarView === 'month') setVisibleMonth(shiftMonth(visibleMonth, amount))
-    else selectDate(shiftLocalDate(selectedDate, amount * 7))
+    const nextDate = calendarPeriodSelection(selectedDate, visibleMonth, calendarView, amount)
+    selectDate(nextDate, calendarView === 'month' ? 'month-navigation' : 'week-navigation')
   }
+
+  function goToCurrentPeriod() { selectDate(today, 'current-period-navigation') }
 
   if (!data) return <section className="screen history-screen"><p className="save-status">{error || 'Opening History…'}</p></section>
   const calendarTitle = calendarView === 'month' ? dateLabel(`${visibleMonth}-01`, { month: 'long', year: 'numeric' }) : weekLabel(dates)
@@ -251,8 +286,8 @@ export function HistoryScreen() {
     {undo ? <div className="history-undo" role="status"><span>{undo.label} moved to Recently Deleted.</span><button className="text-button" onClick={() => void restore()}>Undo</button></div> : null}
     {error ? <p className="notice notice--error" role="alert">{error}</p> : null}
 
-    <section className="history-calendar-card" aria-labelledby="history-calendar-heading">
-      <div className="history-calendar-toolbar"><div className="history-calendar-title-row"><div><p className="eyebrow">Calendar</p><h2 id="history-calendar-heading">{calendarTitle}</h2></div><div className="calendar-actions"><button type="button" aria-label={`Previous ${calendarView}`} onClick={() => moveCalendar(-1)}>←</button><button type="button" onClick={() => selectDate(today)}>Today</button><button type="button" aria-label={`Next ${calendarView}`} onClick={() => moveCalendar(1)}>→</button></div></div><div className="history-calendar-controls"><div className="history-view-switch" aria-label="Calendar view"><button type="button" className={calendarView === 'month' ? 'is-active' : ''} aria-pressed={calendarView === 'month'} onClick={() => changeView('month')}>Month</button><button type="button" className={calendarView === 'week' ? 'is-active' : ''} aria-pressed={calendarView === 'week'} onClick={() => changeView('week')}>Week</button></div><div className="history-calendar-tools"><button ref={colorButtonRef} type="button" className={`calendar-color-toggle${colorOpen ? ' is-active' : ''}`} aria-label="Format Calendar" aria-expanded={colorOpen} aria-controls="calendar-color-panel" onClick={() => setColorOpen((open) => !open)}><PaletteIcon /></button><button type="button" className={`history-search-toggle${searchOpen ? ' is-active' : ''}`} aria-label="Search history" aria-expanded={searchOpen} aria-controls="history-search-panel" onClick={toggleSearch}><SearchIcon /></button></div></div></div>
+    <section className="history-calendar-card history-swipe-surface" aria-labelledby="history-calendar-heading" {...calendarSwipeHandlers}>
+      <div className="history-calendar-toolbar"><div className="history-calendar-title-row"><div><p className="eyebrow">Calendar</p><h2 id="history-calendar-heading">{calendarTitle}</h2></div><div className="calendar-actions"><button type="button" aria-label={`Previous ${calendarView}`} onClick={() => moveCalendar(-1)}>←</button><button type="button" aria-label={`Go to ${currentPeriodLabel(calendarView)}`} onClick={goToCurrentPeriod}>{currentPeriodLabel(calendarView)}</button><button type="button" aria-label={`Next ${calendarView}`} onClick={() => moveCalendar(1)}>→</button></div></div><div className="history-calendar-controls"><div className="history-view-switch" aria-label="Calendar view"><button type="button" className={calendarView === 'month' ? 'is-active' : ''} aria-pressed={calendarView === 'month'} onClick={() => changeView('month')}>Month</button><button type="button" className={calendarView === 'week' ? 'is-active' : ''} aria-pressed={calendarView === 'week'} onClick={() => changeView('week')}>Week</button></div><div className="history-calendar-tools"><button ref={colorButtonRef} type="button" className={`calendar-color-toggle${colorOpen ? ' is-active' : ''}`} aria-label="Format Calendar" aria-expanded={colorOpen} aria-controls="calendar-color-panel" onClick={() => setColorOpen((open) => !open)}><PaletteIcon /></button><button type="button" className={`history-search-toggle${searchOpen ? ' is-active' : ''}`} aria-label="Search history" aria-expanded={searchOpen} aria-controls="history-search-panel" onClick={toggleSearch}><SearchIcon /></button></div></div></div>
       {colorOpen ? <CalendarFormattingPanel panelRef={colorPanelRef} options={filteredMetricOptions} totalOptions={metricOptions.length} selected={selectedMetric} metricId={metricId} metricQuery={metricQuery} heatmap={heatmap} valueCount={metricValues.size} onQueryChange={setMetricQuery} onSelect={(nextMetricId) => setCalendarFormatting((current) => ({ ...current, metricId: nextMetricId }))} onHeatmapChange={(nextHeatmap) => setCalendarFormatting((current) => ({ ...current, heatmap: nextHeatmap }))} onClear={() => { setCalendarFormatting(clearCalendarFormatting()); setMetricQuery('') }} /> : null}
       {calendarView === 'month' ? <MonthCalendar dates={dates} visibleMonth={visibleMonth} selectedDate={selectedDate} firstDayOfWeek={firstDayOfWeek} summaries={summaries} metricValues={metricValues} metricName={selectedMetricName} categories={data.categories} onSelect={selectDate} onKeyDown={handleCalendarKey} title={calendarTitle} /> : <WeekCalendar dates={dates} selectedDate={selectedDate} today={today} summaries={summaries} metricValues={metricValues} metricName={selectedMetricName} categories={data.categories} onSelect={selectDate} onKeyDown={handleCalendarKey} />}
       {calendarView === 'month' ? <div className="calendar-legend"><span><b>✓</b> Completed</span><span><b>◔</b> Draft</span><span><b>✦</b> Quick Logs</span></div> : null}
@@ -343,14 +378,21 @@ function HistoryResultList({ results, onSelect }: { results: readonly HistorySea
   return <div className="history-result-list">{results.map((result) => <button type="button" key={result.recordId} onClick={() => onSelect(result.localDate)}><span className="history-result__date">{dateLabel(result.localDate, { month: 'short', day: 'numeric', year: 'numeric' })}</span><strong>{result.identity}</strong><small>{result.context}{result.daysAgo === 0 ? ' · Today' : ` · ${result.daysAgo} days ago`}</small></button>)}</div>
 }
 
-function DayDetail({ detail, today, onSelectDate, onDelete }: { detail: ReturnType<typeof buildDayDetail>; today: string; onSelectDate: (localDate: string) => void; onDelete: (recordId: string, label: string) => Promise<void> }) {
+function DayDetail({ detail, today, onSelectDate, onDelete }: { detail: ReturnType<typeof buildDayDetail>; today: string; onSelectDate: (localDate: string, intent?: CalendarSelectionIntent) => void; onDelete: (recordId: string, label: string) => Promise<void> }) {
   const groups = useMemo(() => detail.checkIn?.groups ?? [], [detail.checkIn])
   const [selectedCategory, setSelectedCategory] = useState(groups[0]?.category ?? '')
   useEffect(() => { if (!groups.some((group) => group.category === selectedCategory)) setSelectedCategory(groups[0]?.category ?? '') }, [detail.localDate, groups, selectedCategory])
   const group = groups.find((item) => item.category === selectedCategory)
-  return <section className="day-detail history-day-detail" tabIndex={-1} aria-labelledby="day-detail-heading"><div className="day-detail__heading"><div><p className="eyebrow">Selected day</p><h2 id="day-detail-heading"><span>{dateLabel(detail.localDate, { weekday: 'long' })}</span><small>{dateLabel(detail.localDate, { month: 'long', day: 'numeric', year: 'numeric' })}</small></h2></div><div className="selected-day-actions"><Link className="secondary-button button-link" to={`/quick-log?date=${detail.localDate}`}>+ Add Event</Link><div className="selected-day-navigation" aria-label="Selected day navigation"><button type="button" aria-label="Previous day" onClick={() => onSelectDate(shiftLocalDate(detail.localDate, -1))}>←</button><button type="button" onClick={() => onSelectDate(today)}>Today</button><button type="button" aria-label="Next day" onClick={() => onSelectDate(shiftLocalDate(detail.localDate, 1))}>→</button></div></div></div>
-    {detail.checkIn ? <article id={`history-record-${detail.checkIn.record.id}`} className="history-record-card history-checkin-card" aria-label="Nightly Check-In"><div className="history-record__heading"><div className="history-record__title"><p className="eyebrow">Nightly Check-In</p><h3 className="sr-only">Daily Check-In</h3></div><div className="history-record__actions history-checkin-actions"><Link className="history-checkin-edit" to={`/history/check-in/${detail.localDate}`} aria-label="Edit Daily Check-In">Edit <EditIcon /></Link><RecordAction label="Delete Daily Check-In" title="Delete Check-In" danger onClick={() => void onDelete(detail.checkIn!.record.id, 'Daily Check-In')}><TrashIcon /></RecordAction></div></div>{groups.length ? <><nav className="history-category-nav" aria-label="Check-In categories">{groups.map((item) => <button type="button" key={item.category} className={item.category === selectedCategory ? 'is-selected' : ''} style={{ '--history-category-accent': effectiveCategoryColor({ id: item.categoryId ?? item.category, color: undefined }) } as CSSProperties} onClick={() => setSelectedCategory(item.category)}><span aria-hidden="true">{iconGlyph(item.categoryIcon)}</span><small>{item.category}</small></button>)}</nav>{group ? <dl className="history-answer-list" style={{ '--history-category-accent': effectiveCategoryColor({ id: group.categoryId ?? group.category, color: undefined }) } as CSSProperties}>{group.answers.map((answer) => <div key={answer.observationId} className={answer.state === 'answered' ? '' : 'is-missing'}><span className="history-answer-list__icon" aria-hidden="true">{iconGlyph(answer.icon)}</span><dt>{answer.name}</dt><dd>{answer.value}{answer.trendValue ? <small> · {answer.trendValue}</small> : null}</dd><Link className="history-answer-edit" to={`/history/check-in/${detail.localDate}`} aria-label={`Edit ${answer.name}`}><EditIcon /></Link></div>)}</dl> : null}</> : <p className="empty-copy">No answers recorded yet.</p>}</article> : <article className="history-record-card history-checkin-card history-checkin-card--empty" aria-label="Nightly Check-In"><div className="history-record__heading"><div className="history-record__title"><p className="eyebrow">Nightly Check-In</p><h3>No check-in recorded</h3></div></div><p className="empty-copy">Add the usual Daily Check-In answers for this date.</p>{detail.localDate <= today ? <Link className="primary-button button-link history-checkin-add" to={`/history/check-in/${detail.localDate}`}>Add Nightly Check-In</Link> : <p className="empty-copy">Future Check-Ins are not available.</p>}</article>}
-    {detail.events.length ? <section className="history-events"><div className="section-heading history-events__heading"><div><h3>Quick Logs</h3><span>{detail.events.length}</span></div></div>{detail.events.map((event) => <article id={`history-record-${event.record.id}`} className="history-record-card history-event-card" style={{ '--history-category-accent': effectiveCategoryColor(event.category ?? { id: event.definition.categoryId, color: undefined }) } as CSSProperties} key={event.record.id}><div className="history-record__heading"><div className="history-event__identity"><span aria-hidden="true">{iconGlyph(event.definition.icon)}</span><div><h3>{event.definition.name}</h3>{event.timing && event.record.startTimePrecision !== 'day' ? <p>{event.timing}</p> : event.record.eventTimingKind === 'duration' ? <p>{event.timing}</p> : null}</div></div><div className="history-record__actions"><RecordAction label={`Edit ${event.definition.name}`} title={`Edit ${event.definition.name}`} to={`/history/quick-log/${event.record.id}/edit`}><EditIcon /></RecordAction><RecordAction label={`Delete ${event.definition.name}`} title={`Delete ${event.definition.name}`} danger onClick={() => void onDelete(event.record.id, event.definition.name)}><TrashIcon /></RecordAction></div></div>{event.fields.length ? <dl className="event-field-summary">{event.fields.map((field) => <div key={field.observationId}><dt>{field.name}</dt><dd>{field.value}</dd></div>)}</dl> : null}</article>)}</section> : null}
+  function moveSelectedDay(amount: -1 | 1, intent: CalendarSelectionIntent = 'manual-day-selection') {
+    const next = selectedDaySelection(detail.localDate, amount)
+    onSelectDate(next.selectedDate, intent)
+  }
+  const selectedDaySwipeHandlers = useHorizontalSwipe((direction) => {
+    moveSelectedDay(swipeAmount(direction), 'day-navigation')
+  })
+  return <section className="day-detail history-day-detail history-swipe-surface" tabIndex={-1} aria-labelledby="day-detail-heading" {...selectedDaySwipeHandlers}><div className="day-detail__heading"><div><p className="eyebrow">Selected day</p><h2 id="day-detail-heading"><span>{dateLabel(detail.localDate, { weekday: 'long' })}</span><small>{dateLabel(detail.localDate, { month: 'long', day: 'numeric', year: 'numeric' })}</small></h2></div><div className="selected-day-actions"><Link className="secondary-button button-link" to={`/quick-log?date=${detail.localDate}`}>+ Add Event</Link><div className="selected-day-navigation" aria-label="Selected day navigation"><button type="button" aria-label="Previous day" onClick={() => moveSelectedDay(-1)}>←</button><button type="button" onClick={() => onSelectDate(today)}>Today</button><button type="button" aria-label="Next day" onClick={() => moveSelectedDay(1)}>→</button></div></div></div>
+    {detail.checkIn ? <article id={`history-record-${detail.checkIn.record.id}`} className="history-record-card history-checkin-card" aria-label="Nightly Check-In"><div className="history-record__heading"><div className="history-record__title"><p className="eyebrow">Nightly Check-In</p><h3 className="sr-only">Daily Check-In</h3></div><div className="history-record__actions history-checkin-actions"><RecordAction label="Edit Daily Check-In" title="Edit Daily Check-In" to={`/history/check-in/${detail.localDate}`}><EditIcon /></RecordAction><RecordAction label="Delete Daily Check-In" title="Delete Check-In" danger onClick={() => void onDelete(detail.checkIn!.record.id, 'Daily Check-In')}><TrashIcon /></RecordAction></div></div>{groups.length ? <><nav className="history-category-nav" aria-label="Check-In categories">{groups.map((item) => <button type="button" key={item.category} className={item.category === selectedCategory ? 'is-selected' : ''} style={{ '--history-category-accent': effectiveCategoryColor({ id: item.categoryId ?? item.category, color: undefined }) } as CSSProperties} onClick={() => setSelectedCategory(item.category)}><span aria-hidden="true">{iconGlyph(item.categoryIcon)}</span><small>{item.category}</small></button>)}</nav>{group ? <dl className="history-answer-list" style={{ '--history-category-accent': effectiveCategoryColor({ id: group.categoryId ?? group.category, color: undefined }) } as CSSProperties}>{group.answers.map((answer) => <div key={answer.observationId} className={answer.state === 'answered' ? '' : 'is-missing'}><span className="history-answer-list__icon" aria-hidden="true">{iconGlyph(answer.icon)}</span><dt>{answer.name}</dt><dd>{answer.value}{answer.trendValue ? <small> · {answer.trendValue}</small> : null}</dd><Link className="history-answer-edit" to={`/history/check-in/${detail.localDate}`} aria-label={`Edit ${answer.name}`}><EditIcon /></Link></div>)}</dl> : null}</> : <p className="empty-copy">No answers recorded yet.</p>}</article> : <article className="history-record-card history-checkin-card history-checkin-card--empty" aria-label="Nightly Check-In"><div className="history-record__heading"><div className="history-record__title"><p className="eyebrow">Nightly Check-In</p><h3>No check-in recorded</h3></div></div><p className="empty-copy">Add the usual Daily Check-In answers for this date.</p>{detail.localDate <= today ? <Link className="primary-button button-link history-checkin-add" to={`/history/check-in/${detail.localDate}`}>Add Nightly Check-In</Link> : <p className="empty-copy">Future Check-Ins are not available.</p>}</article>}
+    {detail.events.length ? <section className="history-events"><div className="section-heading history-events__heading"><div><h3>Quick Logs</h3><span>{detail.events.length}</span></div></div>{detail.events.map((event) => <article id={`history-record-${event.record.id}`} className="history-record-card history-event-card" style={{ '--history-category-accent': effectiveCategoryColor(event.category ?? { id: event.definition.categoryId, color: undefined }) } as CSSProperties} key={event.record.id}><div className="history-record__heading"><div className="history-event__identity"><span aria-hidden="true">{iconGlyph(event.definition.icon)}</span><div><h3>{event.definition.name}</h3>{event.timing && event.record.startTimePrecision !== 'day' ? <p>{event.timing}</p> : event.record.eventTimingKind === 'duration' ? <p>{event.timing}</p> : null}</div></div><div className="history-record__actions"><RecordAction label={`Edit ${event.definition.name}`} title={`Edit ${event.definition.name}`} to={quickLogEditPath(event.record.id, historyReturnPath(detail.localDate))}><EditIcon /></RecordAction><RecordAction label={`Delete ${event.definition.name}`} title={`Delete ${event.definition.name}`} danger onClick={() => void onDelete(event.record.id, event.definition.name)}><TrashIcon /></RecordAction></div></div>{event.fields.length ? <dl className="event-field-summary">{event.fields.map((field) => <div key={field.observationId}><dt>{field.name}</dt><dd>{field.value}</dd></div>)}</dl> : null}</article>)}</section> : null}
   </section>
 }
 
@@ -360,6 +402,6 @@ export function LegacyDayDetail({ detail, onDelete }: { detail: ReturnType<typeo
     {detail.checkIn ? <article id={`history-record-${detail.checkIn.record.id}`} tabIndex={-1} className="history-record-card history-checkin-card"><div className="history-record__heading"><div className="history-record__title"><h3>Daily Check-In</h3><span className={`status-chip status-chip--${detail.checkIn.record.status}`}>{detail.checkIn.record.status === 'completed' ? '✓ Completed' : '◔ Draft'}</span></div><div className="history-record__actions"><RecordAction label="Edit Daily Check-In" title="Edit Check-In" to={`/history/check-in/${detail.localDate}`}><EditIcon /></RecordAction><RecordAction label="Delete Daily Check-In" title="Delete Check-In" danger onClick={() => void onDelete(detail.checkIn!.record.id, 'Daily Check-In')}><TrashIcon /></RecordAction></div></div>
       {detail.checkIn.groups.length ? <div className="history-answer-groups">{detail.checkIn.groups.map((group) => <section className="history-answer-widget" key={group.category}><h4>{group.category}</h4><dl>{group.answers.map((answer) => <div key={answer.observationId} className={answer.state === 'answered' ? '' : 'is-missing'}><dt>{answer.name}</dt><dd>{answer.value}{answer.trendValue ? <small> · {answer.trendValue}</small> : null}</dd></div>)}</dl></section>)}</div> : <p className="empty-copy">No answers recorded yet.</p>}
     </article> : null}
-    {detail.events.length ? <section className="history-events"><div className="section-heading"><h3>Quick Logs</h3><span>{detail.events.length}</span></div>{detail.events.map((event) => <article id={`history-record-${event.record.id}`} tabIndex={-1} className="history-record-card history-event-card" key={event.record.id}><div className="history-record__heading"><div className="history-event__identity"><span aria-hidden="true">{iconGlyph(event.definition.icon)}</span><div><h3>{event.definition.name}</h3>{event.timing && event.record.startTimePrecision !== 'day' ? <p>{event.timing}</p> : event.record.eventTimingKind === 'duration' ? <p>{event.timing}</p> : null}</div></div><div className="history-record__actions"><RecordAction label={`Edit ${event.definition.name}`} title={`Edit ${event.definition.name}`} to={`/history/quick-log/${event.record.id}/edit`}><EditIcon /></RecordAction><RecordAction label={`Delete ${event.definition.name}`} title={`Delete ${event.definition.name}`} danger onClick={() => void onDelete(event.record.id, event.definition.name)}><TrashIcon /></RecordAction></div></div>{event.fields.length ? <dl className="event-field-summary">{event.fields.map((field) => <div key={field.observationId} className={field.state === 'answered' ? '' : 'is-missing'}><dt>{field.name}</dt><dd>{field.value}</dd></div>)}</dl> : null}</article>)}</section> : null}
+    {detail.events.length ? <section className="history-events"><div className="section-heading"><h3>Quick Logs</h3><span>{detail.events.length}</span></div>{detail.events.map((event) => <article id={`history-record-${event.record.id}`} tabIndex={-1} className="history-record-card history-event-card" key={event.record.id}><div className="history-record__heading"><div className="history-event__identity"><span aria-hidden="true">{iconGlyph(event.definition.icon)}</span><div><h3>{event.definition.name}</h3>{event.timing && event.record.startTimePrecision !== 'day' ? <p>{event.timing}</p> : event.record.eventTimingKind === 'duration' ? <p>{event.timing}</p> : null}</div></div><div className="history-record__actions"><RecordAction label={`Edit ${event.definition.name}`} title={`Edit ${event.definition.name}`} to={quickLogEditPath(event.record.id, historyReturnPath(detail.localDate))}><EditIcon /></RecordAction><RecordAction label={`Delete ${event.definition.name}`} title={`Delete ${event.definition.name}`} danger onClick={() => void onDelete(event.record.id, event.definition.name)}><TrashIcon /></RecordAction></div></div>{event.fields.length ? <dl className="event-field-summary">{event.fields.map((field) => <div key={field.observationId} className={field.state === 'answered' ? '' : 'is-missing'}><dt>{field.name}</dt><dd>{field.value}</dd></div>)}</dl> : null}</article>)}</section> : null}
   </section>
 }

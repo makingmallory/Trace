@@ -15,7 +15,8 @@ export interface TrackablePreset {
   inputType: InputType
   dataRole: DataRole
   valueDirection: ValueDirection
-  icon: IconReference
+  /** Optional explicit art. Ordinary presets inherit the user's category icon. */
+  icon?: IconReference
   unit?: string
   scale?: { min: number; max: number; step: number }
   options?: readonly string[]
@@ -37,12 +38,6 @@ export const categoryPresets: readonly CategoryPreset[] = [
   ['lifestyle-activity', 'Lifestyle & Activity', '🏃'], ['custom-other', 'Custom / Other', '✦'],
 ].map(([slug, name, emoji], sortOrder) => ({ id: `category.${slug}`, name, sortOrder, icon: { type: 'emoji', value: emoji } }))
 
-const icons: Record<string, IconReference> = {
-  mood: { type: 'library', value: 'heart' }, sleep: { type: 'library', value: 'moon' }, skin: { type: 'library', value: 'sparkle' },
-  cycle: { type: 'library', value: 'cycle' }, pain: { type: 'library', value: 'pulse' }, health: { type: 'library', value: 'health' },
-  diet: { type: 'library', value: 'drop' }, treatment: { type: 'library', value: 'capsule' }, activity: { type: 'library', value: 'activity' },
-}
-
 type PresetOverrides = Partial<Omit<TrackablePreset, 'id' | 'categoryId' | 'name'>>
 
 function preset(category: string, slug: string, name: string, overrides: PresetOverrides = {}): TrackablePreset {
@@ -54,7 +49,6 @@ function preset(category: string, slug: string, name: string, overrides: PresetO
     inputType,
     dataRole: overrides.dataRole ?? 'symptom',
     valueDirection: overrides.valueDirection ?? 'worse',
-    icon: overrides.icon ?? icons[category.split('-')[0]] ?? { type: 'library', value: 'sparkle' },
     ...(inputType === 'scale' ? { scale: { min: 1, max: 5, step: 1 } } : {}),
     ...overrides,
   }

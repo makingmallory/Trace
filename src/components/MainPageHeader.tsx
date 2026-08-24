@@ -11,7 +11,7 @@ interface MainPageHeaderProps {
 }
 
 export function MainPageHeader({ eyebrow, title, subtitle, actions, footer, artwork = false, titleId }: MainPageHeaderProps) {
-  return <header className={`main-page-header${artwork ? ' main-page-header--artwork' : ''}`}>
+  return <header className={`trace-page-header main-page-header${artwork ? ' main-page-header--artwork' : ''}`}>
     {artwork ? <div className="main-page-header__art" aria-hidden="true" /> : null}
     <div className="main-page-header__copy">
       <div className="main-page-header__eyebrow-slot">

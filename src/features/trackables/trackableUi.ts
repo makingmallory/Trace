@@ -1,4 +1,4 @@
-import type { Category, InputType } from '../../domain/models/index.ts'
+import type { Category, IconReference, InputType } from '../../domain/models/index.ts'
 import type { TrackableDetails } from '../../domain/trackables/TrackableEngine.ts'
 import type { TrackablePreset } from '../../presets/trackablePresets.ts'
 
@@ -25,6 +25,18 @@ export function isPresetAlreadyActive(preset: TrackablePreset, active: readonly 
     && version.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()
     && version.inputType === preset.inputType,
   )
+}
+
+export function activeTrackableForPreset(preset: TrackablePreset, active: readonly TrackableDetails[]): TrackableDetails | undefined {
+  return active.find(({ trackable, version }) =>
+    trackable.categoryId === preset.categoryId
+    && version.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()
+    && version.inputType === preset.inputType,
+  )
+}
+
+export function presetIcon(preset: TrackablePreset, category: Pick<Category, 'icon'> | undefined): IconReference | undefined {
+  return preset.icon ?? category?.icon
 }
 
 export function filterPresetGroups(

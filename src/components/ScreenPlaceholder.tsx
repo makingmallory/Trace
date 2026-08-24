@@ -18,7 +18,7 @@ export function ScreenPlaceholder({
 }: ScreenPlaceholderProps) {
   return (
     <section className={`screen${mainPage ? ' main-page-screen' : ''}`} aria-labelledby="screen-title">
-      {mainPage ? <MainPageHeader eyebrow={eyebrow} title={title} subtitle={description} titleId="screen-title" /> : <div className="screen__heading">
+      {mainPage ? <MainPageHeader eyebrow={eyebrow} title={title} subtitle={description} titleId="screen-title" /> : <div className="trace-page-header screen__heading">
         <p className="eyebrow">{eyebrow}</p>
         <h1 id="screen-title">{title}</h1>
         <p className="screen__description">{description}</p>

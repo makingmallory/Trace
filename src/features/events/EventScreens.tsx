@@ -10,6 +10,7 @@ import { QuestionInput } from '../checkin/QuestionInput.tsx'
 import { eventEngine } from './eventEngine.ts'
 import { endpointInputFromRecord, type EndpointInputState } from './eventTimingInput.ts'
 import { homeEventEditPath, homeEventTiming } from './homeEventSummary.ts'
+import { resolveQuickLogReturnTo } from './quickLogNavigation.ts'
 import { ActionIcon } from '../../components/ActionIcons.tsx'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
 import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
@@ -37,7 +38,7 @@ export function QuickLogScreen() {
   const results = useMemo(() => (library?.active ?? []).filter(({ definition }) => (categoryId === 'all' || definition.categoryId === categoryId) && `${definition.name} ${definition.description ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())), [library, query, categoryId])
   if (!library) return <Loading />
   return <section className="screen event-picker">
-    <header className="screen__heading compact-heading"><InlineBackHeader to="/" label="Quick Log" ariaLabel="Back to Home" /><h1>What happened?</h1><p className="screen__description">Choose a Quick Log Trackable, then save it in a few taps.</p></header>
+    <header className="trace-page-header screen__heading compact-heading"><InlineBackHeader to="/" label="Quick Log" ariaLabel="Back to Home" /><h1>What happened?</h1><p className="screen__description">Choose a Quick Log Trackable, then save it in a few taps.</p></header>
     {recent.length > 0 && <section className="event-section"><div className="section-heading"><h2>Recent</h2><span>Your latest Trackables</span></div><div className="event-choice-grid">{recent.map((item) => <EventChoice key={item.definition.id} item={item} categories={library.categories} historyDate={historyDate} />)}</div></section>}
     <section className="event-section"><div className="section-heading"><h2>Quick Log Trackables</h2><Link className="quick-log-manage-button" to="/trackables/manage">Manage</Link></div><TrackableFilterControls categories={library.categories.filter((category) => category.active)} search={query} categoryId={categoryId} onSearchChange={setQuery} onCategoryChange={setCategoryId} searchLabel="Search Quick Log Trackables" placeholder="Search Trackables" />
       <div className="event-choice-grid">{results.map((item) => <EventChoice key={item.definition.id} item={item} categories={library.categories} historyDate={historyDate} />)}</div>{results.length === 0 && <p className="empty-copy">No matching Quick Log Trackables.</p>}
@@ -62,6 +63,7 @@ export function LogEventScreen() {
   const [end, setEnd] = useState<EndpointInputState>(initialEndpoint)
   const [duration, setDuration] = useState(false)
   const [busy, setBusy] = useState(false); const [error, setError] = useState('')
+  const returnTo = resolveQuickLogReturnTo(searchParams.get('returnTo'), start.localDate)
   useEffect(() => {
     const load = async () => {
       if (recordId) {
@@ -97,10 +99,10 @@ export function LogEventScreen() {
       const timing = duration ? { occurrence: 'duration' as const, start: endpoint(start), end: endpoint(end), ongoing: false, timezone: start.localTime || end.localTime ? currentTimeZone() : null } : { occurrence: 'point' as const, start: endpoint(start), ongoing: false, timezone: start.localTime ? currentTimeZone() : null }
       const draft = { eventDefinitionId: details.definition.id, timing, answers: [...answers.values()] }
       const result = recordId ? await eventEngine.updateEvent(recordId, draft) : await eventEngine.logEvent(draft)
-      navigate(recordId || searchParams.get('date') ? `/history?date=${result.record.localDate}` : '/', { replace: true, state: { loggedEventId: result.record.id } })
+      navigate(recordId ? returnTo : searchParams.get('date') ? `/history?date=${result.record.localDate}` : '/', { replace: true, state: { loggedEventId: result.record.id } })
     } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this Quick Log entry.') } finally { setBusy(false) }
   }
-  return <section className="screen log-event-screen"><header className="event-log-header page-header"><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><InlineBackHeader to={recordId ? `/history?date=${start.localDate}` : '/quick-log'} label={recordId ? 'Edit Quick Log entry' : 'Quick Log'} /><h1>{details.definition.name}</h1></div></div></header>
+  return <section className="screen log-event-screen"><header className="trace-page-header event-log-header page-header"><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><InlineBackHeader to={recordId ? returnTo : '/quick-log'} replace={Boolean(recordId)} label={recordId ? 'Edit Quick Log entry' : 'Quick Log'} /><h1>{details.definition.name}</h1></div></div></header>
     <form className="event-log-form" onSubmit={submit}>
       <section className="event-timing-card"><h2>When?</h2>
         <PointTimingInput value={start} onChange={setStart} dayOnly={false} />
@@ -151,7 +153,7 @@ export function ManageEventsScreen() {
   useEffect(load, [])
   async function toggle(id: string, active: boolean) { try { await eventEngine.setDefinitionActive(id, active); load() } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not update Trackable.') } }
   if (!library) return <Loading />
-  return <section className="screen manage-events"><header className="screen__heading compact-heading"><InlineBackHeader to="/quick-log" label="Trackables" ariaLabel="Back to Quick Log" /><h1>Quick Log Trackables</h1><p className="screen__description">Configure timing and optional structured details.</p></header><Link className="primary-button button-link" to="/trackables/custom">+ Create Trackable</Link>
+  return <section className="screen manage-events"><header className="trace-page-header screen__heading compact-heading"><InlineBackHeader to="/quick-log" label="Trackables" ariaLabel="Back to Quick Log" /><h1>Quick Log Trackables</h1><p className="screen__description">Configure timing and optional structured details.</p></header><Link className="primary-button button-link" to="/trackables/custom">+ Create Trackable</Link>
     {error && <p className="form-error">{error}</p>}<div className="event-manage-list">{library.active.map((item) => <EventManageCard key={item.definition.id} item={item} active action={() => void toggle(item.definition.id, false)} />)}</div>
     {library.archived.length > 0 && <section className="event-section"><div className="section-heading"><h2>Archived</h2></div><div className="event-manage-list">{library.archived.map((item) => <EventManageCard key={item.definition.id} item={item} active={false} action={() => void toggle(item.definition.id, true)} />)}</div></section>}
   </section>
@@ -167,7 +169,7 @@ export function EventEditorScreen() {
   function moveField(index: number, direction: -1 | 1) { if (!draft) return; const next = [...draft.trackableIds]; const swap = index + direction; if (swap < 0 || swap >= next.length) return; [next[index], next[swap]] = [next[swap], next[index]]; setDraft({ ...draft, trackableIds: next }) }
   async function submit(event: FormEvent) { event.preventDefault(); const submitted = draft; if (!submitted) return; setBusy(true); setError(''); try { if (details) await eventEngine.updateDefinition(details.definition.id, submitted); else await eventEngine.createDefinition(submitted); navigate('/trackables') } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this Quick Log Trackable.') } finally { setBusy(false) } }
   const available = library.availableTrackables.filter((item) => !draft.trackableIds.includes(item.trackable.id))
-  return <section className="screen event-editor"><header className="screen__heading compact-heading"><InlineBackHeader to="/trackables/manage" label="Quick Log details" ariaLabel="Back to Trackables" /><h1>{details ? details.definition.name : 'Create Quick Log Trackable'}</h1></header><form className="trackable-form trackable-editor-form" onSubmit={submit}>
+  return <section className="screen event-editor"><header className="trace-page-header screen__heading compact-heading"><InlineBackHeader to="/trackables/manage" label="Quick Log details" ariaLabel="Back to Trackables" /><h1>{details ? details.definition.name : 'Create Quick Log Trackable'}</h1></header><form className="trackable-form trackable-editor-form" onSubmit={submit}>
     <label className="form-field"><span>Name</span><input required maxLength={100} autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Physical therapy" /></label><label className="form-field"><span>Description <small>optional</small></span><textarea rows={2} value={draft.description ?? ''} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
     <div className="form-row"><label className="form-field"><span>Category</span><select value={draft.categoryId} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}>{library.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="form-field"><span>Timing</span><select value={draft.timingMode} onChange={(event) => setDraft({ ...draft, timingMode: event.target.value as EventTimingMode })}>{Object.entries(timingLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
     <div className="form-row"><label className="form-field"><span>Data role</span><select value={draft.dataRole} onChange={(event) => setDraft({ ...draft, dataRole: event.target.value as DataRole })}>{roles.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label className="form-field"><span>Icon</span><select value={draft.icon?.type === 'library' ? draft.icon.value : 'sparkle'} onChange={(event) => setDraft({ ...draft, icon: { type: 'library', value: event.target.value } })}>{builtInIcons.map((item) => <option key={item.id} value={item.id}>{item.glyph} {item.label}</option>)}</select></label></div>

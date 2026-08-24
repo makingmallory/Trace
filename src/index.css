@@ -8,6 +8,9 @@
   --page-header-top: 1.1rem;
   --page-header-bottom: 1.35rem;
   --page-header-description-gap: 0.7rem;
+  --page-header-label-height: 1rem;
+  --page-header-label-gap: 0.6rem;
+  --page-header-label-space: calc(var(--page-header-label-height) + var(--page-header-label-gap));
   color: #25172b;
   background: #fffcfe;
   font-synthesis: none;
@@ -81,8 +84,8 @@ button:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 4.5rem;
-  padding: max(var(--space-md), env(safe-area-inset-top)) max(var(--space-lg), env(safe-area-inset-right)) var(--space-md) max(var(--space-lg), env(safe-area-inset-left));
+  min-height: 5.4rem;
+  padding: max(1.1rem, env(safe-area-inset-top)) max(var(--space-lg), env(safe-area-inset-right)) 0.35rem max(var(--space-lg), env(safe-area-inset-left));
 }
 
 .brand {
@@ -123,10 +126,6 @@ button:focus-visible {
 .screen {
   width: min(100%, 48rem);
   margin: 0 auto;
-}
-
-.screen__heading {
-  margin: clamp(1rem, 5vw, 3.5rem) 0 var(--space-xl);
 }
 
 .eyebrow {
@@ -306,7 +305,6 @@ h1 {
 .status-dot { display: inline-block; width: 0.7rem; height: 0.7rem; border: 2px solid var(--color-muted-text); border-radius: 50%; }
 .status-dot--draft { border-color: var(--color-warning); background: var(--color-warning); }
 .status-dot--completed { border-color: var(--color-success); background: var(--color-success); }
-.compact-heading { margin-bottom: var(--space-lg); }
 .back-link { display: inline-flex; min-height: 2.75rem; align-items: center; color: var(--color-primary-strong); font-weight: 750; text-decoration: none; }
 .event-picker,
 .manage-events,
@@ -329,7 +327,6 @@ h1 {
 .event-choice small { margin-top: 0.2rem; color: var(--color-muted-text); }
 .event-choice b { color: var(--color-primary-strong); }
 .event-create-path { display: inline-flex; margin-top: var(--space-xl); text-decoration: none; }
-.event-log-header { margin: clamp(1rem, 5vw, 3rem) 0 var(--space-lg); }
 .event-title { display: flex; gap: var(--space-md); align-items: center; }
 .event-title .eyebrow { margin-bottom: var(--space-xs); }
 .event-log-form { display: grid; gap: var(--space-lg); }
@@ -535,7 +532,7 @@ h1 {
 .save-status strong { color: var(--color-text); }
 .save-status__detail { padding-left: var(--space-sm); border-left: 1px solid var(--color-border); }
 
-.checkin-header { display: flex; gap: var(--space-lg); align-items: end; justify-content: space-between; margin: clamp(1rem, 5vw, 3rem) 0 0; }
+.checkin-header { display: flex; gap: var(--space-lg); align-items: end; justify-content: space-between; }
 .checkin-header .back-link { margin: 0 0 var(--space-lg) -0.8rem; }
 .checkin-form,
 .routine-settings,
@@ -938,7 +935,6 @@ h1 {
 }
 
 .manage-link { background: var(--color-background-accent); }
-.subpage-header { margin: clamp(1rem, 5vw, 3rem) 0 var(--space-md); }
 .subpage-header .back-link { margin: 0 0 var(--space-lg) -0.8rem; }
 
 .collection-groups,
@@ -1097,16 +1093,6 @@ h1 {
 .editor-actions { display: flex; gap: var(--space-sm); align-items: center; }
 .archive-card { flex-wrap: wrap; }
 .archive-card .secondary-button { width: 100%; }
-
-.trackables-hero {
-  display: flex;
-  gap: var(--space-lg);
-  align-items: end;
-  justify-content: space-between;
-  margin: clamp(1rem, 5vw, 3.5rem) 0 var(--space-sm);
-}
-
-.trackables-hero .screen__description { margin-bottom: 0; }
 
 .segmented {
   display: flex;
@@ -1377,8 +1363,6 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .trackables-hero { align-items: stretch; flex-direction: column; }
-  .trackables-hero .primary-button { align-self: start; }
   .pack-grid,
   .form-row { grid-template-columns: 1fr; }
   .trackable-card { align-items: flex-start; flex-wrap: wrap; }
@@ -1428,12 +1412,6 @@ h1 {
 .app-shell--trackables-collection {
   width: min(100%, 48rem);
   padding-bottom: 7.5rem;
-}
-
-.app-shell--trackables-collection .app-header {
-  min-height: 4.5rem;
-  padding-top: max(var(--space-md), env(safe-area-inset-top));
-  padding-bottom: var(--space-md);
 }
 
 .app-shell--trackables-collection .brand {
@@ -1586,6 +1564,7 @@ h1 {
 
 .trackables-screen--collection .collection-group__title {
   display: flex;
+  flex: 1;
   min-width: 0;
   width: auto;
   height: auto;
@@ -1596,6 +1575,18 @@ h1 {
   color: inherit;
   background: transparent;
   font-size: inherit;
+}
+
+.trackables-screen--collection .collection-group__category-icon {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 2.25rem;
+  place-items: center;
+  border-radius: 0.72rem;
+  background: color-mix(in srgb, var(--category-accent) 9%, var(--color-surface));
+  font-family: "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 1.08rem;
 }
 
 .trackables-screen--collection .collection-group__title strong {
@@ -1683,6 +1674,33 @@ h1 {
   font-size: 0.86rem;
   letter-spacing: 0.08em;
 }
+
+/* Shared expandable browsing treatment for the ready-made Library and Starter Packs. */
+.browse-section-stack { display: grid; gap: 0.55rem; }
+.browse-section { position: relative; overflow: hidden; border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent); border-radius: 1rem; background: color-mix(in srgb, var(--color-surface) 96%, transparent); box-shadow: 0 0.45rem 1.5rem rgb(76 31 77 / 6%); }
+.browse-section::before { position: absolute; top: 0.22rem; bottom: 0.22rem; left: -1px; width: 0.26rem; border-radius: 0 0.3rem 0.3rem 0; background: var(--category-accent, var(--color-primary)); content: ''; }
+.browse-section__header { display: flex; min-width: 0; align-items: center; }
+.browse-section__trigger { display: grid; min-width: 0; flex: 1; grid-template-columns: 2.4rem minmax(0, 1fr) auto 1rem; gap: 0.6rem; align-items: center; padding: 0.7rem 0.9rem 0.7rem 1rem; border: 0; color: var(--color-text); background: transparent; text-align: left; cursor: pointer; }
+.browse-section__icon { display: grid; width: 2.4rem; height: 2.4rem; place-items: center; border-radius: 0.75rem; color: var(--color-primary-strong); background: color-mix(in srgb, var(--category-accent, var(--color-primary)) 9%, var(--color-surface)); font-family: "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-size: 1.2rem; }
+.browse-section__copy { display: grid; min-width: 0; gap: 0.12rem; }
+.browse-section__copy strong { overflow: hidden; font-size: 0.98rem; font-weight: 820; letter-spacing: -0.015em; text-overflow: ellipsis; white-space: nowrap; }
+.browse-section__copy small { overflow: hidden; color: var(--color-muted-text); font-size: 0.74rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.browse-section__count { display: grid; min-width: 1.55rem; height: 1.55rem; place-items: center; padding: 0 0.35rem; border-radius: var(--radius-pill); color: var(--color-muted-text); background: color-mix(in srgb, var(--category-accent, var(--color-primary)) 8%, var(--color-surface)); font-size: 0.7rem; font-weight: 800; }
+.browse-section__trigger > svg { width: 1rem; height: 1rem; color: var(--color-primary-strong); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--motion-standard) ease; }
+.browse-section.is-open .browse-section__trigger > svg { transform: rotate(180deg); }
+.browse-section__bulk-action { flex: 0 0 auto; min-height: 2.2rem; margin-right: 0.65rem; padding: 0.35rem 0.58rem; border: 1px solid color-mix(in srgb, var(--color-primary) 45%, var(--color-border)); border-radius: 0.7rem; color: var(--color-primary-strong); background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); font-size: 0.72rem; font-weight: 800; white-space: nowrap; cursor: pointer; }
+.browse-section__bulk-action:disabled { cursor: wait; opacity: 0.65; }
+.browse-section__items { border-top: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent); }
+.browse-section .preset-list-row { display: flex; min-height: 4.2rem; gap: 0.7rem; align-items: center; padding: 0.6rem 0.85rem 0.6rem 1rem; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.browse-section .preset-list-row + .preset-list-row { border-top: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent); }
+.browse-section .preset-list-row .collection-card__icon { width: 2.35rem; flex-basis: 2.35rem; height: 2.35rem; border-radius: 0.72rem; font-size: 1.1rem; }
+.browse-section .preset-list-row > div { min-width: 0; flex: 1; }
+.browse-section .preset-list-row h3 { overflow: hidden; margin: 0; font-size: 0.9rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.browse-section .preset-list-row p { margin: 0.15rem 0 0; color: var(--color-muted-text); font-size: 0.75rem; }
+.browse-section .tile-action { flex: 0 0 4.25rem; min-height: 2.25rem; padding: 0.35rem 0.5rem; border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border)); border-radius: 0.7rem; color: var(--color-primary-strong); background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)); font-size: 0.74rem; font-weight: 800; white-space: nowrap; cursor: pointer; }
+.browse-section .tile-action.is-added { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 36%, var(--color-border)); background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface)); }
+.browse-section .tile-action:disabled { cursor: wait; opacity: 0.65; }
+.browse-section .pack-future { margin: 0; padding: 0.3rem 1rem 0.75rem; color: var(--color-muted-text); font-size: 0.74rem; }
 
 .bottom-navigation {
   right: auto;
@@ -1853,7 +1871,8 @@ h1 {
 .app-shell--history .history-calendar-controls { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .app-shell--history .history-calendar-tools { display: flex; gap: 0.45rem; }
 .app-shell--history .history-calendar-tools .history-search-toggle { flex-basis: auto; width: 2.6rem; height: 2.6rem; margin: 0; }
-.app-shell--history .calendar-actions { width: auto; grid-template-columns: 2.7rem 5.2rem 2.7rem; }
+.app-shell--history .calendar-actions { width: auto; grid-template-columns: 2.75rem max-content 2.75rem; gap: 0.35rem; }
+.app-shell--history .calendar-actions button { min-height: 2rem; padding-block: 0; border-radius: 0.65rem; font-size: 0.75rem; font-weight: 650; line-height: 1; white-space: nowrap; }
 .calendar-activity-dots { display: flex; min-height: 0.3rem; flex-wrap: wrap; gap: 0.13rem; align-items: center; justify-content: center; }
 .calendar-activity-dots i { width: 0.3rem; height: 0.3rem; border-radius: 50%; background: var(--category-dot); }
 .app-shell--history .calendar-day { align-content: space-between; }
@@ -1893,8 +1912,6 @@ h1 {
 .history-answer-edit { display: grid; width: 1.7rem; height: 1.7rem; place-items: center; border: 1px solid color-mix(in srgb, var(--history-category-accent) 18%, var(--color-border)); border-radius: 50%; color: var(--history-category-accent); background: var(--color-surface); }
 .history-answer-edit svg { width: 0.9rem; height: 0.9rem; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .history-checkin-actions { gap: 0.32rem; }
-.history-checkin-edit { display: inline-flex; min-height: 1.9rem; gap: 0.25rem; align-items: center; color: var(--color-primary-strong); font-size: 0.74rem; font-weight: 620; text-decoration: none; }
-.history-checkin-edit svg { width: 0.85rem; height: 0.85rem; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .history-checkin-actions .record-icon-action { width: 1.9rem; height: 1.9rem; opacity: 0.58; }
 .history-events__heading { justify-content: flex-start; }
 .history-events__heading > div { display: inline-flex; gap: 0.45rem; align-items: center; }
@@ -1905,8 +1922,9 @@ h1 {
 .category-color-suggestions button { width: 1rem; height: 1rem; padding: 0; border: 2px solid var(--color-surface); border-radius: 50%; outline: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent); background: var(--swatch-color); }
 .category-color-suggestions button.is-selected { outline: 2px solid var(--color-text); }
 @media (max-width: 24rem) {
-  .app-shell--history .history-calendar-title-row { align-items: flex-start; flex-direction: column; }
-  .app-shell--history .calendar-actions { width: 100%; grid-template-columns: 1fr 1.35fr 1fr; }
+  .app-shell--history .history-calendar-title-row { align-items: center; flex-direction: row; gap: 0.5rem; }
+  .app-shell--history .calendar-actions { width: auto; grid-template-columns: 2.35rem 4.5rem 2.35rem; gap: 0.28rem; }
+  .app-shell--history .calendar-actions button { min-height: 2.35rem; padding-inline: 0.3rem; }
   .week-calendar { gap: 0.18rem; }
   .week-calendar__day { min-height: 4.35rem; padding-top: 0.24rem; }
   .week-calendar__day > span:first-child { font-size: 0.48rem; }
@@ -1920,12 +1938,6 @@ h1 {
 .app-shell--checkin {
   width: min(100%, 48rem);
   padding-bottom: 7.5rem;
-}
-
-.app-shell--checkin .app-header {
-  min-height: 5.4rem;
-  padding-top: max(1.1rem, env(safe-area-inset-top));
-  padding-bottom: 0.35rem;
 }
 
 .app-shell--checkin .brand {
@@ -1955,7 +1967,6 @@ h1 {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.8rem;
   align-items: start;
-  margin: 0.9rem 0 0;
 }
 
 .checkin-screen--daily .screen__description {
@@ -1991,13 +2002,14 @@ h1 {
 .checkin-date {
   position: relative;
   display: grid;
-  grid-template-columns: 1rem auto 1rem;
-  justify-content: center;
+  grid-template-columns: 0.7rem auto 1rem 0.7rem;
+  column-gap: 0;
   cursor: pointer;
 }
 
 .checkin-date time {
   grid-column: 2;
+  margin-right: 0.4rem;
   text-align: center;
 }
 
@@ -2319,6 +2331,7 @@ h1 {
 
   .checkin-date {
     max-width: 8.5rem;
+    grid-template-columns: 0.3rem auto 1rem 1.1rem;
   }
 
   .checkin-category-jumps button {
@@ -2345,10 +2358,6 @@ h1 {
 /* Phase 2: compact entry screen, using the Phase 1 collection vocabulary. */
 .add-trackable-screen {
   gap: 1.1rem;
-}
-
-.add-trackable-screen__header {
-  margin: 1.25rem 0 0;
 }
 
 .add-trackable-screen__back {
@@ -2495,10 +2504,6 @@ h1 {
     gap: 1.2rem;
   }
 
-  .add-trackable-screen__header {
-    margin-top: 0.85rem;
-  }
-
   .add-trackable-screen .screen__description {
     margin-top: 0.9rem;
     font-size: 0.96rem;
@@ -2540,13 +2545,36 @@ h1 {
   }
 }
 
-/* Remaining-screen convergence: reuse the core Trace surfaces without changing flows. */
-.screen__heading,
-.subpage-header,
-.page-header {
+/* One shared page-header geometry for main routes and subpages. The label/back
+   slot is reserved consistently, while Daily Check-In keeps its title baseline. */
+.trace-page-header {
+  position: relative;
+  min-width: 0;
   margin-top: var(--page-header-top);
   margin-bottom: var(--page-header-bottom);
 }
+
+.trace-page-header > .inline-back-header,
+.trace-page-header .event-title .inline-back-header,
+.trace-page-header > .add-trackable-screen__back,
+.trace-page-header > .eyebrow,
+.trace-page-header .main-page-header__eyebrow-slot {
+  position: absolute;
+  top: calc(-1 * var(--page-header-label-space));
+  left: 0;
+  min-height: var(--page-header-label-height);
+  margin: 0;
+  padding: 0;
+}
+
+.trace-page-header > .inline-back-header,
+.trace-page-header .event-title .inline-back-header,
+.trace-page-header > .add-trackable-screen__back {
+  height: var(--page-header-label-height);
+}
+
+.trace-page-header > .eyebrow { margin: 0; }
+.trace-page-header .event-title { align-items: flex-start; }
 
 .subpage-header .back-link,
 .compact-heading .back-link {
@@ -2560,9 +2588,7 @@ h1 {
   text-decoration: none;
 }
 
-.screen__heading h1,
-.subpage-header h1,
-.page-header h1 {
+.trace-page-header h1 {
   font-family: var(--page-title-font-family);
   font-size: var(--page-title-size);
   font-weight: var(--page-title-weight);
@@ -2570,23 +2596,11 @@ h1 {
   letter-spacing: var(--page-title-letter-spacing);
 }
 
-.page-header h1 { margin: 0; }
-
-.screen__heading .screen__description,
-.subpage-header .screen__description,
-.page-header .screen__description {
+.trace-page-header .screen__description {
   max-width: 31rem;
   margin-top: var(--page-header-description-gap);
   font-size: 0.96rem;
   line-height: 1.52;
-}
-
-.trackables-screen--collection .page-header,
-.add-trackable-screen .page-header,
-.checkin-screen--daily .page-header,
-.event-log-header.page-header {
-  margin-top: var(--page-header-top);
-  margin-bottom: var(--page-header-bottom);
 }
 
 .home-foundation,
@@ -2655,7 +2669,6 @@ h1 {
 .event-choice > span,
 .event-title > span,
 .event-manage-card > span { width: 2.55rem; height: 2.55rem; border-radius: 0.78rem; }
-.event-log-header { margin: 1.05rem 0 1rem; }
 .event-timing-card { gap: 0.75rem; padding: 0.95rem; border-radius: 1.1rem; }
 .event-manage-list { gap: 0.55rem; margin-top: 0.8rem; }
 .event-manage-card { padding: 0.75rem; }
@@ -2904,6 +2917,11 @@ h1 {
   text-transform: uppercase;
 }
 
+.trace-page-header .inline-back-header {
+  min-height: var(--page-header-label-height);
+  padding: 0;
+}
+
 .inline-back-header svg {
   width: 1.1rem;
   height: 1.1rem;
@@ -3062,34 +3080,44 @@ h1 {
   padding-inline: var(--main-page-gutter);
 }
 
-.app-shell--main-page .app-header {
-  min-height: 4.5rem;
-  padding-top: max(var(--space-md), env(safe-area-inset-top));
-  padding-bottom: var(--space-md);
-}
-
 .main-page-screen {
   display: grid;
   gap: 1.25rem;
 }
 
 .main-page-header {
-  position: relative;
-  min-width: 0;
-  margin-top: var(--page-header-top);
+  margin-bottom: 0;
   isolation: isolate;
 }
 
 .main-page-header__copy {
+  position: static;
+  z-index: 1;
+}
+
+.app-shell--history .main-page-header__copy,
+.app-shell--history .history-calendar-card,
+.app-shell--history .history-search,
+.app-shell--history .history-results,
+.app-shell--history .history-undo {
   position: relative;
   z-index: 1;
 }
 
+.app-shell--history .history-day-detail .selected-day-actions > .secondary-button {
+  box-shadow: none;
+}
+
+.app-shell--history .history-swipe-surface {
+  touch-action: pan-y;
+  overscroll-behavior-x: contain;
+}
+
 .main-page-header__eyebrow-slot {
   display: flex;
-  min-height: 1rem;
+  min-height: var(--page-header-label-height);
   align-items: flex-start;
-  margin-bottom: 0.6rem;
+  margin: 0;
 }
 
 .main-page-header__eyebrow-slot .eyebrow {
@@ -3108,20 +3136,9 @@ h1 {
   min-width: 0;
 }
 
-.main-page-header h1 {
-  font-family: var(--page-title-font-family);
-  font-size: var(--page-title-size);
-  font-weight: var(--page-title-weight);
-  line-height: var(--page-title-line-height);
-  letter-spacing: var(--page-title-letter-spacing);
-}
-
 .main-page-header .screen__description {
   min-height: 3rem;
   max-width: 23rem;
-  margin-top: var(--page-header-description-gap);
-  font-size: 0.96rem;
-  line-height: 1.52;
 }
 
 .main-page-header__actions {
@@ -3138,7 +3155,7 @@ h1 {
 .main-page-header__art {
   position: absolute;
   z-index: 0;
-  top: -2.925rem;
+  top: calc(-2.925rem - var(--page-header-label-space) - 0.625rem);
   left: calc(var(--main-page-gutter) * -1);
   width: 100vw;
   aspect-ratio: 1536 / 951;
@@ -3158,32 +3175,40 @@ h1 {
     --main-page-gutter: var(--space-md);
   }
 
+  .app-shell--history .main-page-header .screen__description {
+    max-width: 67%;
+  }
+
   .home-screen .planned-actions {
     gap: 0.6rem;
   }
 
   .home-screen .home-action {
     min-width: 0;
-    gap: 0.4rem;
-    padding: 0.55rem;
+    gap: 0.3rem;
+    padding: 0.55rem 1rem;
   }
 
   .home-screen .home-action > div {
+    flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
   }
 
   .home-screen .home-action > span,
   .home-screen .home-action.home-action--checkin > span,
   .home-screen .home-action.home-action--quick-log > span {
-    width: 2rem;
-    height: 2rem;
-    flex-basis: 2rem;
+    width: 1.625rem;
+    height: 1.625rem;
+    flex-basis: 1.625rem;
     border-radius: 0.65rem;
     font-size: 1.3rem;
   }
 
   .home-screen .home-action strong,
   .home-screen .home-action small {
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
@@ -3198,8 +3223,11 @@ h1 {
   }
 
   .home-screen .home-action b {
-    flex: 0 0 auto;
+    display: grid;
+    flex: 0 0 0.5rem;
+    width: 0.5rem;
     padding-left: 0;
+    place-items: center;
     font-size: 1.4rem;
   }
 
@@ -3208,6 +3236,22 @@ h1 {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: var(--space-md);
+  }
+
+  .app-shell--history .history-calendar-title-row {
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .app-shell--history .calendar-actions {
+    width: auto;
+    grid-template-columns: 2.75rem max-content 2.75rem;
+    gap: 0.35rem;
+  }
+
+  .app-shell--history .calendar-actions button {
+    min-height: 2.25rem;
+    padding-inline: 0.25rem;
   }
 
   .app-shell--history .history-day-detail .selected-day-actions {
@@ -3270,10 +3314,7 @@ h1 {
     --main-page-gutter: 0.85rem;
   }
 
-  .screen__heading h1,
-  .subpage-header h1,
-  .main-page-header h1,
-  .page-header h1 { font-size: 2rem; }
+  .trace-page-header h1 { font-size: 2rem; }
   .planned-action,
   .event-choice { min-height: 4rem; }
   .sync-details { grid-template-columns: 1fr; }
@@ -3290,6 +3331,13 @@ h1 {
   .home-action.home-action--quick-log > span { width: 2rem; height: 2rem; flex-basis: 2rem; font-size: 1.3rem; }
   .today-card { padding: 0.9rem; }
   .today-checkin-action { min-width: 4.65rem; padding-right: 0.55rem; padding-left: 0.55rem; }
+}
+
+@media (max-width: 23rem) {
+  .home-screen .home-action small {
+    font-size: 0.7rem;
+    letter-spacing: -0.01em;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
