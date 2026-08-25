@@ -17,7 +17,7 @@ export function AppShell() {
       <NativeAppCoordinator />
       <header className="app-header">
         <a className="brand" href="#/" aria-label="Trace home">
-          <img className="brand-mark" src={`${import.meta.env.BASE_URL}icons/trace-logo.png`} alt="Trace" />
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}icons/trace-header-logo.png`} alt="Trace" />
         </a>
         <SyncStatusBadge />
       </header>
