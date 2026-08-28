@@ -36,6 +36,8 @@ Every row stores its stable `id`, entity `revision`, server `remoteRevision`, cr
 
 The Sheet assigns a monotonically increasing remote revision to each accepted row change. Trace pulls only rows newer than its stored checkpoint and uploads only records whose fingerprint differs from their last acknowledged copy. Pushes contain the last known remote revision. If the Sheet changed after that base and contents differ, the endpoint returns a conflict instead of overwriting either copy.
 
+Trace stores the complete local, synced, and—when available—last acknowledged snapshots for unresolved conflicts. Identical or metadata-only differences normalize automatically. Changes to different payload fields merge only when a known common base proves they do not overlap. Competing values, delete-vs-edit cases, and stable-ID collisions remain blocked and visible under **Settings → Google Sheets Backup → Review conflicts** until the user keeps the local or synced copy. Resolving a conflict updates the local record and sync metadata in one IndexedDB transaction; **Keep Local** rebases the local copy for the normal upload pipeline, while **Keep Synced** installs the Sheet copy locally. Trace does not currently offer **Keep Both** for same-ID conflicts because duplicating connected health records safely requires graph-aware identity remapping.
+
 Tombstones remain rows with `deletedAt`. Restoring increments the entity revision, clears `deletedAt`, and upserts the same stable ID. Remote rows are not hard-deleted.
 
 ## Security and privacy tradeoff

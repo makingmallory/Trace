@@ -248,6 +248,33 @@ export interface Settings extends SyncableEntity {
   dailyCheckInReminder?: DailyCheckInReminderConfig
 }
 
+export interface SyncRecordSnapshot {
+  format: 'trace-sync'
+  syncVersion: 1
+  schemaVersion: 1 | 2
+  entityType: string
+  id: EntityId
+  revision: number
+  createdAt: ISODateTime
+  updatedAt: ISODateTime
+  deletedAt: ISODateTime | null
+  originDeviceId?: EntityId
+  baseRemoteRevision: number
+  remoteRevision?: number
+  payload: Readonly<Record<string, JsonValue>>
+}
+
+export type SyncConflictKind = 'delete-vs-edit' | 'identity-collision' | 'differing-values'
+
+export interface SyncConflictSnapshot {
+  id: string
+  kind: SyncConflictKind
+  detectedAt: ISODateTime
+  local: SyncRecordSnapshot
+  remote: SyncRecordSnapshot
+  base?: SyncRecordSnapshot
+}
+
 export interface SyncMetadata extends Entity {
   schemaVersion: number
   deviceId: EntityId
@@ -259,5 +286,8 @@ export interface SyncMetadata extends Entity {
     remoteRevision: number
     entityRevision: number
     fingerprint: string
+    baseRecord?: SyncRecordSnapshot
   }>>
+  /** Durable unresolved local/remote pairs. Optional for pre-conflict-storage databases. */
+  unresolvedConflicts?: Readonly<Record<string, SyncConflictSnapshot>>
 }

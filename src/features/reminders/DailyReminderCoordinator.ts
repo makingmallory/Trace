@@ -9,7 +9,7 @@ export interface DailyReminderNotificationAdapter {
   isSupported(): boolean
   checkPermission(): Promise<NotificationPermissionState>
   requestPermission(): Promise<NotificationPermissionState>
-  replaceDailyReminder(time: string): Promise<void>
+  replaceDailyReminder(time: string, options?: { requestExactAlarmPermission?: boolean }): Promise<void>
   cancelDailyReminder(): Promise<void>
 }
 
@@ -91,7 +91,7 @@ export class DailyReminderCoordinator {
     }
 
     try {
-      await this.notifications.replaceDailyReminder(config.time)
+      await this.notifications.replaceDailyReminder(config.time, { requestExactAlarmPermission: true })
       await saveDailyCheckInReminder(this.repository, config)
       return { config, permission, outcome: 'enabled' }
     } catch (error) {

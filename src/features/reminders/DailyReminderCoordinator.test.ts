@@ -10,7 +10,7 @@ class FakeNotifications implements DailyReminderNotificationAdapter {
   requestedPermission: NotificationPermissionState = 'granted'
   checkPermission = vi.fn(async () => this.permission)
   requestPermission = vi.fn(async () => this.requestedPermission)
-  replaceDailyReminder = vi.fn(async (_time: string) => undefined)
+  replaceDailyReminder = vi.fn(async (_time: string, _options?: { requestExactAlarmPermission?: boolean }) => undefined)
   cancelDailyReminder = vi.fn(async () => undefined)
   isSupported(): boolean { return true }
 }
@@ -31,9 +31,10 @@ describe('DailyReminderCoordinator', () => {
     const result = await coordinator.update({ enabled: true, time: '20:30' })
 
     expect(notifications.requestPermission).toHaveBeenCalledOnce()
-    expect(notifications.replaceDailyReminder).toHaveBeenCalledWith('20:30')
+    expect(notifications.replaceDailyReminder).toHaveBeenCalledWith('20:30', { requestExactAlarmPermission: true })
     expect(result).toMatchObject({ config: { enabled: true, time: '20:30' }, permission: 'granted', outcome: 'enabled' })
     expect((await repository.getById('settings', 'settings'))?.dailyCheckInReminder?.enabled).toBe(true)
+    expect((await repository.getById('settings', 'settings'))?.dailyCheckInReminder?.time).toBe('20:30')
   })
 
   it('keeps the preference off and cancels pending work when permission is denied', async () => {
@@ -74,5 +75,13 @@ describe('DailyReminderCoordinator', () => {
     expect(result.outcome).toBe('disabled')
     expect(notifications.cancelDailyReminder).toHaveBeenCalledOnce()
     expect((await repository.getById('settings', 'settings'))?.dailyCheckInReminder?.enabled).toBe(false)
+  })
+
+  it('does not persist an enabled reminder or report success when native scheduling fails', async () => {
+    const { repository, notifications, coordinator } = await setup()
+    notifications.replaceDailyReminder.mockRejectedValueOnce(new Error('Android schedule failed'))
+
+    await expect(coordinator.update({ enabled: true, time: '21:00' })).rejects.toThrow('Android schedule failed')
+    expect((await repository.getById('settings', 'settings'))?.dailyCheckInReminder).toEqual({ enabled: false, time: '21:00' })
   })
 })

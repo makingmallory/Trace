@@ -13,6 +13,8 @@ describe('sync badge status', () => {
   })
 
   it('treats persisted record conflicts as work that still needs sync attention', () => {
+    expect(deriveSyncBadgePresentation({ ...base, unresolvedConflictCount: 2, lastError: null })).toMatchObject({ status: 'needs-sync', label: 'Needs Sync' })
+    expect(deriveSyncBadgePresentation({ ...base, unresolvedConflictCount: 2, lastError: 'Provider unavailable' })).toMatchObject({ status: 'error', label: 'Sync Error' })
     expect(deriveSyncBadgePresentation({ ...base, lastError: '18 record conflicts need attention.' })).toMatchObject({ status: 'needs-sync', label: 'Needs Sync' })
     expect(deriveSyncBadgePresentation({ ...base, lastError: 'Provider unavailable' })).toMatchObject({ status: 'error', label: 'Sync Error' })
   })
@@ -21,8 +23,15 @@ describe('sync badge status', () => {
     expect(deriveSyncBadgePresentation({ ...base, syncing: true, online: false, pendingChangeCount: 1, lastError: 'Failed' }).status).toBe('syncing')
     expect(deriveSyncBadgePresentation({ ...base, online: false, pendingChangeCount: 1, lastError: 'Failed' }).status).toBe('error')
     expect(deriveSyncBadgePresentation({ ...base, online: false, pendingChangeCount: 1, lastError: '2 record conflicts need attention.' }).status).toBe('needs-sync')
+    expect(deriveSyncBadgePresentation({ ...base, online: false, unresolvedConflictCount: 1 }).status).toBe('needs-sync')
     expect(deriveSyncBadgePresentation({ ...base, syncing: true, online: false, pendingChangeCount: 1 }).status).toBe('syncing')
     expect(deriveSyncBadgePresentation({ ...base, online: false, pendingChangeCount: 1 }).status).toBe('offline')
+  })
+
+  it('leaves Needs Sync after the last conflict only when no other work remains', () => {
+    expect(deriveSyncBadgePresentation({ ...base, unresolvedConflictCount: 1 }).status).toBe('needs-sync')
+    expect(deriveSyncBadgePresentation({ ...base, unresolvedConflictCount: 0, pendingChangeCount: 1 }).status).toBe('needs-sync')
+    expect(deriveSyncBadgePresentation({ ...base, unresolvedConflictCount: 0, pendingChangeCount: 0 }).status).toBe('synced')
   })
 
   it('falls back safely when backup state is not configured or not yet known', () => {

@@ -5,6 +5,7 @@ import { CheckInScreen } from './features/checkin/CheckInScreen.tsx'
 import { AddToDailyCheckInScreen, RoutineSettingsScreen } from './features/checkin/RoutineSettingsScreen.tsx'
 import { HomeScreen } from './features/home/HomeScreen.tsx'
 import { SettingsScreen } from './features/settings/SettingsScreen.tsx'
+import { SyncConflictsScreen } from './features/settings/SyncConflictsScreen.tsx'
 import { SyncSpikeScreen } from './features/sync-spike/SyncSpikeScreen.tsx'
 import {
   AddTrackableScreen,
@@ -53,6 +54,7 @@ function App() {
         <Route path="trackables/manage/categories/:categoryId" element={<CategoryEditorScreen mode="edit" />} />
         <Route path="trackables/manage/archived" element={<ArchivedTrackablesScreen />} />
         <Route path="settings" element={<SettingsScreen />} />
+        <Route path="settings/sync/conflicts" element={<SyncConflictsScreen />} />
         <Route path="settings/nightly-check-in" element={<RoutineSettingsScreen />} />
         <Route path="settings/nightly-check-in/add" element={<AddToDailyCheckInScreen />} />
         <Route path="sync-spike" element={<SyncSpikeScreen />} />

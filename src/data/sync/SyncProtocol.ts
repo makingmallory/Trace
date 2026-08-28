@@ -1,3 +1,4 @@
+import type { JsonValue, SyncRecordSnapshot } from '../../domain/models/index.ts'
 import type { RepositoryCollection, RepositoryCollectionMap } from '../repository/DataRepository.ts'
 
 export const TRACE_SYNC_FORMAT = 'trace-sync' as const
@@ -15,20 +16,9 @@ export const syncedCollections = [
 export type SyncedCollection = (typeof syncedCollections)[number]
 export type SyncedEntity = RepositoryCollectionMap[SyncedCollection]
 
-export interface SyncRecord {
-  format: typeof TRACE_SYNC_FORMAT
-  syncVersion: typeof TRACE_SYNC_VERSION
-  schemaVersion: 1 | typeof TRACE_SCHEMA_VERSION
+export interface SyncRecord extends SyncRecordSnapshot {
   entityType: SyncedCollection
-  id: string
-  revision: number
-  createdAt: string
-  updatedAt: string
-  deletedAt: string | null
-  originDeviceId?: string
-  baseRemoteRevision: number
-  remoteRevision?: number
-  payload: Record<string, unknown>
+  payload: Record<string, JsonValue>
 }
 
 const requiredPayloadFields: Readonly<Record<SyncedCollection, readonly string[]>> = {
@@ -87,7 +77,7 @@ export function serializeEntity<K extends SyncedCollection>(
     deletedAt,
     ...(originDeviceId ? { originDeviceId } : {}),
     baseRemoteRevision,
-    payload: structuredClone(payload) as Record<string, unknown>,
+    payload: structuredClone(payload) as Record<string, JsonValue>,
   }
 }
 

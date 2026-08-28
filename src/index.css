@@ -208,7 +208,24 @@ h1 {
 .sync-setup small { color: var(--color-muted-text); }
 .sync-message { padding: var(--space-md); border-radius: var(--radius-sm); background: var(--color-background-accent); }
 .sync-message--success { color: var(--color-success); }
+.sync-message--attention { color: var(--color-primary-strong); }
 .sync-message--error { color: var(--color-danger); }
+.sync-conflict-link { width: fit-content; }
+.sync-conflict-list { display: grid; gap: var(--space-md); }
+.sync-conflict-card { display: grid; gap: var(--space-md); padding: var(--space-lg); border: 1px solid var(--color-border); border-left: 0.28rem solid var(--color-primary); border-radius: var(--radius-lg); background: var(--color-surface); box-shadow: var(--shadow-card); }
+.sync-conflict-card h2, .sync-conflict-card h3, .sync-conflict-card p { margin: 0; }
+.sync-conflict-card__heading { display: flex; min-width: 0; align-items: start; justify-content: space-between; gap: var(--space-sm); }
+.sync-conflict-card__heading h2 { margin-top: 0.15rem; font-size: 1.1rem; }
+.sync-conflict-card__heading p:last-child, .sync-conflict-card__explanation { color: var(--color-muted-text); line-height: 1.45; }
+.sync-conflict-versions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); }
+.sync-conflict-versions section { min-width: 0; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-background-accent); }
+.sync-conflict-versions h3 { margin-bottom: var(--space-xs); color: var(--color-muted-text); font-size: 0.76rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.sync-conflict-versions p { overflow-wrap: anywhere; font-weight: 680; }
+.sync-conflict-versions small { display: block; margin-top: var(--space-xs); color: var(--color-danger); }
+.sync-conflict-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.sync-conflict-actions button { min-width: 7.5rem; }
+.sync-conflict-confirm { display: grid; gap: var(--space-sm); padding: var(--space-md); border-radius: var(--radius-md); background: var(--color-background-accent); }
+.sync-conflict-confirm > div { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 
 .placeholder-card__sparkle {
   display: block;
@@ -1920,11 +1937,11 @@ h1 {
 .history-checkin-add { width: fit-content; justify-self: start; }
 .history-day-detail .history-checkin-card, .history-day-detail .history-event-card { position: relative; overflow: hidden; }
 .history-day-detail .history-event-card::before { position: absolute; inset: 0 auto 0 0; width: 0.28rem; background: var(--history-category-accent, var(--color-primary)); content: ''; }
-.history-category-nav { display: flex; gap: 0.3rem; overflow: hidden; padding: 0.15rem 0.1rem 0.35rem; }
-.history-category-nav button { display: grid; min-width: 0; flex: 1 1 0; gap: 0.27rem; place-items: center; padding: 0.45rem 0.22rem 0.35rem; border: 1px solid transparent; border-bottom: 0.2rem solid transparent; border-radius: 0.72rem; color: var(--color-muted-text); background: transparent; cursor: pointer; overflow: hidden; }
+.history-category-nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.3rem; overflow: hidden; padding: 0.15rem 0.1rem 0.35rem; }
+.history-category-nav button { display: grid; min-width: 0; gap: 0.27rem; place-items: center; padding: 0.45rem 0.12rem 0.35rem; border: 1px solid transparent; border-bottom: 0.2rem solid transparent; border-radius: 0.72rem; color: var(--color-muted-text); background: transparent; cursor: pointer; overflow: hidden; }
 .history-category-nav button span { display: grid; width: 2.25rem; height: 2.25rem; place-items: center; border-radius: 0.7rem; background: color-mix(in srgb, var(--history-category-accent) 9%, var(--color-surface)); font-size: 1.12rem; }
 .history-category-nav button small { display: block; width: 100%; min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: normal; font-size: 0.68rem; font-weight: 620; line-height: 1.16; text-align: center; white-space: normal; }
-.history-category-nav button.is-selected { border-color: color-mix(in srgb, var(--history-category-accent) 58%, var(--color-border)); border-bottom-color: var(--history-category-accent); color: var(--history-category-accent); background: var(--color-surface); box-shadow: 0 0.25rem 0.75rem color-mix(in srgb, var(--history-category-accent) 14%, transparent); }
+.history-category-nav button.is-selected { border-color: color-mix(in srgb, var(--history-category-accent) 58%, var(--color-border)); border-bottom-color: var(--history-category-accent); color: var(--history-category-accent); background: color-mix(in srgb, var(--history-category-accent) 9%, var(--color-surface)); box-shadow: none; }
 .history-category-nav button.is-selected span { background: color-mix(in srgb, var(--history-category-accent) 15%, var(--color-surface)); }
 .history-answer-list { display: grid; margin: 0; border: 1px solid color-mix(in srgb, var(--history-category-accent) 16%, var(--color-border)); border-radius: 0.8rem; overflow: hidden; background: color-mix(in srgb, var(--history-category-accent) 3%, var(--color-surface)); }
 .history-answer-list > div { display: grid; grid-template-columns: 1.85rem minmax(0, 1fr) minmax(4rem, 1.25fr) 1.85rem; gap: 0.5rem; align-items: center; min-width: 0; padding: 0.56rem 0.68rem; border-bottom: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent); }
@@ -3213,27 +3230,24 @@ h1 {
     max-width: 67%;
   }
 
-  .app-shell--history .history-category-nav {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.35rem;
-    overflow: visible;
-    padding-inline: 0;
-  }
+  .app-shell--history .history-category-nav { gap: 0.22rem; padding-inline: 0; }
 
   .app-shell--history .history-category-nav button {
     width: 100%;
-    min-height: 5rem;
-    grid-template-rows: 2.25rem minmax(2.32em, auto);
-    gap: 0.22rem;
-    padding: 0.35rem 0.12rem 0.26rem;
+    min-height: 4.7rem;
+    grid-template-rows: 2.05rem minmax(2.32em, auto);
+    gap: 0.14rem;
+    padding: 0.3rem 0.06rem 0.22rem;
   }
+
+  .app-shell--history .history-category-nav button span { width: 2.05rem; height: 2.05rem; font-size: 1rem; }
 
   .app-shell--history .history-category-nav button small {
     display: -webkit-box;
+    width: 100%;
     overflow: hidden;
-    font-size: 0.64rem;
-    line-height: 1.16;
+    font-size: 0.56rem;
+    line-height: 1.12;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }

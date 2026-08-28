@@ -5,6 +5,7 @@ export interface SyncBadgeSnapshot {
   readonly syncing: boolean
   readonly online: boolean
   readonly pendingChangeCount: number
+  readonly unresolvedConflictCount?: number
   readonly lastSuccessfulSyncAt: string | null
   readonly lastError: string | null
 }
@@ -29,8 +30,10 @@ function hasUnresolvedRecordConflicts(lastError: string | null): boolean {
 export function deriveSyncBadgePresentation(snapshot: SyncBadgeSnapshot): SyncBadgePresentation {
   if (!snapshot.configured) return presentation('sync', 'Sync')
   if (snapshot.syncing) return presentation('syncing', 'Syncing')
-  if (snapshot.lastError && !hasUnresolvedRecordConflicts(snapshot.lastError)) return presentation('error', 'Sync Error')
-  if (hasUnresolvedRecordConflicts(snapshot.lastError)) return presentation('needs-sync', 'Needs Sync')
+  const legacyConflictMessage = hasUnresolvedRecordConflicts(snapshot.lastError)
+  const hasConflicts = (snapshot.unresolvedConflictCount ?? 0) > 0 || legacyConflictMessage
+  if (snapshot.lastError && !legacyConflictMessage) return presentation('error', 'Sync Error')
+  if (hasConflicts) return presentation('needs-sync', 'Needs Sync')
   if (!snapshot.online) return presentation('offline', 'Offline')
   if (snapshot.pendingChangeCount > 0) return presentation('needs-sync', 'Needs Sync')
   if (snapshot.lastSuccessfulSyncAt) return presentation('synced', 'Synced')
@@ -38,5 +41,7 @@ export function deriveSyncBadgePresentation(snapshot: SyncBadgeSnapshot): SyncBa
 }
 
 export function publishSyncStatusChange(detail: { readonly syncing?: boolean } = {}): void {
-  globalThis.dispatchEvent(new CustomEvent(SYNC_STATUS_CHANGED_EVENT, { detail }))
+  if (typeof globalThis.dispatchEvent === 'function' && typeof globalThis.CustomEvent === 'function') {
+    globalThis.dispatchEvent(new CustomEvent(SYNC_STATUS_CHANGED_EVENT, { detail }))
+  }
 }

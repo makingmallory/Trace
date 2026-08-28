@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ScreenPlaceholder } from '../../components/ScreenPlaceholder.tsx'
 import { IndexedDbDataRepository } from '../../data/local/IndexedDbDataRepository.ts'
@@ -6,14 +6,16 @@ import { createTraceBackup, downloadTraceBackup, restoreTraceBackup } from '../.
 import { GoogleSheetsAppsScriptSyncProvider } from '../../data/sync/google/GoogleSheetsAppsScriptSyncProvider.ts'
 import type { SyncConnection } from '../../data/sync/SyncConnectionStore.ts'
 import { SYNC_METADATA_ID } from '../../data/sync/SyncService.ts'
-import { publishSyncStatusChange } from '../../data/sync/SyncStatus.ts'
+import { normalizeSyncConflicts } from '../../data/sync/SyncConflicts.ts'
+import { SYNC_STATUS_CHANGED_EVENT, publishSyncStatusChange } from '../../data/sync/SyncStatus.ts'
 import { serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
 import { shareTextFile } from '../../platform/nativeFiles.ts'
 import type { DailyReminderResult } from '../reminders/DailyReminderCoordinator.ts'
 import { createDailyReminderCoordinator } from '../reminders/reminderRuntime.ts'
+import { shouldShowReminderSaved } from '../reminders/reminderSaveFeedback.ts'
 
 type SetupMode = 'new' | 'existing' | null
-type RunState = 'idle' | 'connecting' | 'syncing' | 'success' | 'error'
+type RunState = 'idle' | 'connecting' | 'syncing' | 'success' | 'attention' | 'error'
 
 function formatLastSync(value: string | null): string {
   return value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Not synced yet'
@@ -27,22 +29,31 @@ export function SettingsScreen() {
   const [message, setMessage] = useState('')
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [pending, setPending] = useState(0)
+  const [conflictCount, setConflictCount] = useState(0)
   const [online, setOnline] = useState(() => navigator.onLine)
   const [dailyReminderEnabled, setDailyReminderEnabled] = useState(false)
   const [dailyReminderTime, setDailyReminderTime] = useState('21:00')
   const [reminderBusy, setReminderBusy] = useState(false)
   const [reminderMessage, setReminderMessage] = useState('')
+  const [reminderSaved, setReminderSaved] = useState(false)
+  const reminderSavedTimeout = useRef<number | undefined>(undefined)
 
   async function refreshStatus(active = connection) {
-    if (!active) { setLastSync(null); setPending(0); return }
+    if (!active) { setLastSync(null); setPending(0); setConflictCount(0); return }
     const service = serviceForConnection(active)
     const metadata = await service.metadata()
     setLastSync(metadata.lastSuccessfulSyncAt)
     setPending(await service.countPending())
+    setConflictCount(Object.keys(normalizeSyncConflicts(metadata)).length)
     if (metadata.lastError) setMessage(metadata.lastError)
   }
 
   useEffect(() => { void refreshStatus() }, [connection])
+  useEffect(() => {
+    const refreshSyncSection = () => { void refreshStatus() }
+    window.addEventListener(SYNC_STATUS_CHANGED_EVENT, refreshSyncSection)
+    return () => window.removeEventListener(SYNC_STATUS_CHANGED_EVENT, refreshSyncSection)
+  }, [connection])
   useEffect(() => {
     let active = true
     void createDailyReminderCoordinator().reconcile().then((result) => {
@@ -52,6 +63,9 @@ export function SettingsScreen() {
       if (active) setReminderMessage(error instanceof Error ? error.message : 'Could not verify the Android reminder.')
     })
     return () => { active = false }
+  }, [])
+  useEffect(() => () => {
+    if (reminderSavedTimeout.current !== undefined) window.clearTimeout(reminderSavedTimeout.current)
   }, [])
   useEffect(() => {
     const refreshReminderState = (event: Event) => applyReminderResult((event as CustomEvent<DailyReminderResult>).detail)
@@ -77,7 +91,7 @@ export function SettingsScreen() {
       if (connection?.endpointUrl !== next.endpointUrl) {
         const repository = new IndexedDbDataRepository()
         const metadata = await repository.getById('syncMetadata', SYNC_METADATA_ID)
-        if (metadata) await repository.save('syncMetadata', { ...metadata, remoteCheckpoint: 0, recordStates: {}, pendingChangeCount: await serviceForConnection(connection ?? next).countLocalRecords(), lastError: null })
+        if (metadata) await repository.save('syncMetadata', { ...metadata, remoteCheckpoint: 0, recordStates: {}, unresolvedConflicts: {}, pendingChangeCount: await serviceForConnection(connection ?? next).countLocalRecords(), lastError: null })
       }
       syncConnectionStorage.save(next)
       setConnection(next)
@@ -95,7 +109,7 @@ export function SettingsScreen() {
     publishSyncStatusChange({ syncing: true })
     try {
       const result = await serviceForConnection(connection).sync()
-      setState(result.conflicts.length ? 'error' : 'success')
+      setState(result.conflicts.length ? 'attention' : 'success')
       setMessage(result.conflicts.length ? `${result.conflicts.length} record conflict${result.conflicts.length === 1 ? '' : 's'} preserved; neither copy was overwritten.` : `Synced ${result.pulled + result.pushed} change${result.pulled + result.pushed === 1 ? '' : 's'}.`)
       await refreshStatus(connection)
     } catch (error) { setState('error'); setMessage(error instanceof Error ? error.message : 'Sync did not finish. Your local data is safe.') }
@@ -138,8 +152,15 @@ export function SettingsScreen() {
 
   async function updateDailyReminder(enabled: boolean) {
     setReminderBusy(true)
+    setReminderSaved(false)
+    if (reminderSavedTimeout.current !== undefined) window.clearTimeout(reminderSavedTimeout.current)
     try {
-      applyReminderResult(await createDailyReminderCoordinator().update({ enabled, time: dailyReminderTime }))
+      const result = await createDailyReminderCoordinator().update({ enabled, time: dailyReminderTime })
+      applyReminderResult(result)
+      if (shouldShowReminderSaved(result, enabled)) {
+        setReminderSaved(true)
+        reminderSavedTimeout.current = window.setTimeout(() => setReminderSaved(false), 2_000)
+      }
     } catch (error) {
       setDailyReminderEnabled(false)
       setReminderMessage(error instanceof Error ? error.message : 'Could not update the Android reminder. Notifications remain off.')
@@ -157,8 +178,9 @@ export function SettingsScreen() {
           </>
         ) : (
           <>
-            <div className="sync-status-row"><span className={`sync-status-dot sync-status-dot--${online ? 'connected' : 'offline'}`} /> <strong>{online ? (state === 'syncing' ? 'Syncing' : pending ? 'Changes waiting' : state === 'error' ? 'Error' : 'Synced') : 'Offline'}</strong><span>{connection.sheetName}</span></div>
-            <dl className="sync-details"><div><dt>Last successful sync</dt><dd>{formatLastSync(lastSync)}</dd></div><div><dt>Waiting to sync</dt><dd>{pending} change{pending === 1 ? '' : 's'}</dd></div></dl>
+            <div className="sync-status-row"><span className={`sync-status-dot sync-status-dot--${online ? 'connected' : 'offline'}`} /> <strong>{online ? (state === 'syncing' ? 'Syncing' : state === 'error' ? 'Error' : conflictCount ? 'Needs attention' : pending ? 'Changes waiting' : 'Synced') : 'Offline'}</strong><span>{connection.sheetName}</span></div>
+            <dl className="sync-details"><div><dt>Last successful sync</dt><dd>{formatLastSync(lastSync)}</dd></div><div><dt>Waiting to sync</dt><dd>{pending} change{pending === 1 ? '' : 's'}</dd></div>{conflictCount ? <div><dt>Conflicts</dt><dd>{conflictCount} needs attention</dd></div> : null}</dl>
+            {conflictCount ? <Link className="secondary-button sync-conflict-link" to="/settings/sync/conflicts">Review {conflictCount} conflict{conflictCount === 1 ? '' : 's'}</Link> : null}
             <div className="sync-actions"><button className="primary-button" type="button" disabled={state === 'syncing'} onClick={() => void syncNow()}>{state === 'syncing' ? 'Syncing…' : 'Sync Now'}</button>{connection.sheetId ? <a className="secondary-button" href={`https://docs.google.com/spreadsheets/d/${encodeURIComponent(connection.sheetId)}/edit`} target="_blank" rel="noreferrer">Open Backup</a> : null}</div>
             <details className="sync-manage"><summary>Manage Backup</summary><div><button className="text-button" type="button" onClick={() => { setSetupMode('existing'); setEndpointUrl(connection.endpointUrl) }}>Reconnect or Change Backup</button><button className="text-button" type="button" onClick={() => { setSetupMode('new'); setEndpointUrl('') }}>Use a Replacement Sheet</button><button className="text-button" type="button" onClick={disconnect}>Disconnect</button></div></details>
           </>
@@ -170,7 +192,7 @@ export function SettingsScreen() {
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Restore Trace Data</h2><p>Restore a current backup or safely upgrade a pre-unification backup.</p></div><label className="button-link">Import JSON Backup<input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file) }} /></label></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Trackables</h2><p>Manage Daily Value and Occurrence Trackables in one place.</p></div><Link className="button-link" to="/trackables/manage">Manage Trackables</Link></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Daily Check-In</h2><p>Choose, order, and configure the questions in your daily routine.</p></div><Link className="button-link" to="/settings/nightly-check-in">Configure Routine</Link></div>
-      <section className="developer-card reminder-card" aria-labelledby="daily-reminder-heading"><div><p className="developer-card__label">Reminders</p><h2 id="daily-reminder-heading">Daily Check-In Reminder</h2><p>Remind me if I haven&apos;t completed my Daily Check-In.</p></div><div className="reminder-card__controls"><label><input type="checkbox" checked={dailyReminderEnabled} disabled={reminderBusy} onChange={(event) => void updateDailyReminder(event.target.checked)} /> Enable Reminder</label><label className="form-field"><span>Time</span><input type="time" value={dailyReminderTime} onChange={(event) => setDailyReminderTime(event.target.value)} required /></label><button className="secondary-button" type="button" disabled={reminderBusy} onClick={() => void updateDailyReminder(dailyReminderEnabled)}>{reminderBusy ? 'Checking…' : 'Save Reminder'}</button>{reminderMessage ? <p role="status">{reminderMessage}</p> : null}</div></section>
+      <section className="developer-card reminder-card" aria-labelledby="daily-reminder-heading"><div><p className="developer-card__label">Reminders</p><h2 id="daily-reminder-heading">Daily Check-In Reminder</h2><p>Remind me if I haven&apos;t completed my Daily Check-In.</p></div><div className="reminder-card__controls"><label><input type="checkbox" checked={dailyReminderEnabled} disabled={reminderBusy} onChange={(event) => void updateDailyReminder(event.target.checked)} /> Enable Reminder</label><label className="form-field"><span>Time</span><input type="time" value={dailyReminderTime} onChange={(event) => setDailyReminderTime(event.target.value)} required /></label><button className="secondary-button" type="button" disabled={reminderBusy} onClick={() => void updateDailyReminder(dailyReminderEnabled)}>{reminderBusy ? 'Checking…' : reminderSaved ? 'Saved ✓' : 'Save Reminder'}</button>{reminderMessage ? <p role="status">{reminderMessage}</p> : null}</div></section>
       </div>
     </ScreenPlaceholder>
   )

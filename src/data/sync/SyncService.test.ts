@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Category } from '../../domain/models/index.ts'
 import { InMemoryDataRepository } from '../local/InMemoryDataRepository.ts'
 import type { PullResult, PushResult, SyncProvider, SyncProviderHealth } from './SyncProvider.ts'
@@ -81,6 +81,70 @@ describe('SyncService production reconciliation', () => {
     expect(result.conflicts).toHaveLength(1)
     expect((await second.getById('categories', 'category-1'))?.name).toBe('Web edit')
     expect(provider.records.get('categories:category-1')?.payload.name).toBe('Phone edit')
+    expect(await new SyncService(second, provider).conflicts()).toHaveLength(1)
+    expect((await new SyncService(second, provider).metadata()).unresolvedConflicts?.['categories:category-1']).toMatchObject({ kind: 'differing-values' })
+  })
+
+  it('automatically merges non-overlapping concurrent fields using the acknowledged base', async () => {
+    const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
+    await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()
+    await first.save('categories', category(2, 'Remote name'))
+    await second.save('categories', { ...category(2), sortOrder: 7 })
+    await new SyncService(first, provider).sync()
+    const result = await new SyncService(second, provider).sync()
+    expect(result.conflicts).toHaveLength(0)
+    expect(await second.getById('categories', 'category-1')).toMatchObject({ name: 'Remote name', sortOrder: 7 })
+  })
+
+  it('resolves Keep Local by rebasing the local record for normal upload', async () => {
+    const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
+    await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()
+    await first.save('categories', category(2, 'Synced edit')); await second.save('categories', category(2, 'Local edit'))
+    await new SyncService(first, provider).sync()
+    const service = new SyncService(second, provider); await service.sync()
+    await service.resolveConflict('categories:category-1', 'keep-local')
+    expect(await service.conflicts()).toHaveLength(0)
+    expect((await second.getById('categories', 'category-1'))?.name).toBe('Local edit')
+    await service.sync()
+    expect(provider.records.get('categories:category-1')?.payload.name).toBe('Local edit')
+  })
+
+  it('resolves Keep Synced atomically by replacing local content and removing the conflict', async () => {
+    const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
+    await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()
+    await first.save('categories', category(2, 'Synced edit')); await second.save('categories', category(2, 'Local edit'))
+    await new SyncService(first, provider).sync()
+    const service = new SyncService(second, provider); await service.sync()
+    await second.save('categories', { ...category(), id: 'category-unrelated', name: 'Unsynced local category' })
+    await service.resolveConflict('categories:category-1', 'keep-synced')
+    expect(await service.conflicts()).toHaveLength(0)
+    expect((await second.getById('categories', 'category-1'))?.name).toBe('Synced edit')
+    expect((await service.metadata()).lastError).toBeNull()
+    expect((await service.metadata()).pendingChangeCount).toBe(1)
+  })
+
+  it('keeps delete-vs-edit conflicts unresolved until the user chooses', async () => {
+    const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
+    await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()
+    await first.save('categories', category(2, 'Original', '2026-08-12T00:00:00.000Z'))
+    await second.save('categories', category(2, 'Meaningful edit'))
+    await new SyncService(first, provider).sync()
+    const result = await new SyncService(second, provider).sync()
+    expect(result.conflicts).toHaveLength(1)
+    expect((await new SyncService(second, provider).metadata()).unresolvedConflicts?.['categories:category-1']).toMatchObject({ kind: 'delete-vs-edit' })
+    expect((await second.getById('categories', 'category-1'))?.name).toBe('Meaningful edit')
+  })
+
+  it('retains the conflict when an atomic resolution write fails', async () => {
+    const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
+    await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()
+    await first.save('categories', category(2, 'Synced edit')); await second.save('categories', category(2, 'Local edit'))
+    await new SyncService(first, provider).sync()
+    const service = new SyncService(second, provider); await service.sync()
+    vi.spyOn(second, 'saveTransaction').mockRejectedValueOnce(new Error('Transaction failed'))
+    await expect(service.resolveConflict('categories:category-1', 'keep-synced')).rejects.toThrow('Transaction failed')
+    expect(await service.conflicts()).toHaveLength(1)
+    expect((await second.getById('categories', 'category-1'))?.name).toBe('Local edit')
   })
 
   it('propagates a tombstone and restoration of the same stable ID', async () => {

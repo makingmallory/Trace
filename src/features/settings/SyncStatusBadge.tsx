@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { SYNC_SETTINGS_PATH, SYNC_STATUS_CHANGED_EVENT, deriveSyncBadgePresentation, type SyncBadgeSnapshot } from '../../data/sync/SyncStatus.ts'
 import { serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
+import { normalizeSyncConflicts } from '../../data/sync/SyncConflicts.ts'
 
 const initialSnapshot = (): SyncBadgeSnapshot => ({
   configured: Boolean(syncConnectionStorage.load()),
   syncing: false,
   online: typeof navigator === 'undefined' || navigator.onLine,
   pendingChangeCount: 0,
+  unresolvedConflictCount: 0,
   lastSuccessfulSyncAt: null,
   lastError: null,
 })
@@ -17,12 +19,12 @@ export function SyncStatusBadge() {
   const refresh = useCallback(async () => {
     const connection = syncConnectionStorage.load()
     if (!connection) {
-      setSnapshot((current) => ({ ...current, configured: false, online: typeof navigator === 'undefined' || navigator.onLine, pendingChangeCount: 0, lastSuccessfulSyncAt: null, lastError: null }))
+      setSnapshot((current) => ({ ...current, configured: false, online: typeof navigator === 'undefined' || navigator.onLine, pendingChangeCount: 0, unresolvedConflictCount: 0, lastSuccessfulSyncAt: null, lastError: null }))
       return
     }
     const service = serviceForConnection(connection)
     const [metadata, pendingChangeCount] = await Promise.all([service.metadata(), service.countPending()])
-    setSnapshot((current) => ({ ...current, configured: true, online: typeof navigator === 'undefined' || navigator.onLine, pendingChangeCount, lastSuccessfulSyncAt: metadata.lastSuccessfulSyncAt, lastError: metadata.lastError }))
+    setSnapshot((current) => ({ ...current, configured: true, online: typeof navigator === 'undefined' || navigator.onLine, pendingChangeCount, unresolvedConflictCount: Object.keys(normalizeSyncConflicts(metadata)).length, lastSuccessfulSyncAt: metadata.lastSuccessfulSyncAt, lastError: metadata.lastError }))
   }, [])
 
   useEffect(() => {
