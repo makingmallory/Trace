@@ -3,9 +3,9 @@ import { InMemoryDataRepository } from '../../data/local/InMemoryDataRepository.
 import type { HistoryData, HistorySearchResult } from './HistoryEngine.ts'
 import {
   HistoryEngine, buildCalendarSummaries, buildDayDetail, buildWeekAgenda, calendarDates, compareHistoryEvents,
-  calendarMetricOptions, eventCoveredDates, eventMetricChoices, formatCheckInAgendaSummary, groupHistoryResults, historySearchSuggestions,
+  buildHistorySearchIndex, calendarMetricOptions, eventCoveredDates, eventMetricChoices, formatCheckInAgendaSummary, groupHistoryResults, historySearchSuggestions,
   metricChoices, observedRangeLevel, parseHistoryQuery, projectCalendarMetric, projectEventCalendar, projectMetricCalendar, searchHistory, formatHistoryAnswer,
-  shiftLocalDate, shiftMonth, sliceHistoryGroup, weekDates,
+  normalizeHistorySearchText, shiftLocalDate, shiftMonth, sliceHistoryGroup, weekDates,
 } from './HistoryEngine.ts'
 import type { LogRecord, Observation } from '../models/index.ts'
 
@@ -174,9 +174,85 @@ describe('duration calendar coverage', () => {
 })
 
 describe('History search and metric projection', () => {
+  function recordedValueFixture(): HistoryData {
+    const base = fixture()
+    const injection = record('injection-record', '2026-08-09', 'event', { trackableId: 'injection', trackableVersion: 1, eventTimingKind: 'point', startTimePrecision: 'timeOfDay', startTimeOfDay: 'evening' })
+    const medicationAnswer: Observation = { id: 'obs-medication', logRecordId: injection.id, trackableId: 'medication-type', trackableVersion: 1, answer: { state: 'answered', value: { kind: 'text', value: 'Humira' } }, ...sync }
+    const journalAnswer: Observation = { id: 'obs-journal', logRecordId: 'routine-1', trackableId: 'journal', trackableVersion: 1, answer: { state: 'answered', value: { kind: 'text', value: 'Felt rested' } }, ...sync }
+    const choiceAnswer: Observation = { id: 'obs-choice', logRecordId: 'routine-1', trackableId: 'location', trackableVersion: 1, answer: { state: 'answered', value: { kind: 'choice', value: null } }, ...sync }
+    return {
+      ...base,
+      categories: [...base.categories, { id: 'medication', name: 'Medication & Treatment', sortOrder: 3, active: true, ...sync }],
+      logRecords: [...base.logRecords, injection],
+      observations: [...base.observations, medicationAnswer, journalAnswer, choiceAnswer],
+      observationSelections: [...base.observationSelections, { id: 'selection-location', observationId: choiceAnswer.id, optionId: 'location-cheek', ...sync }],
+      routineItems: [
+        ...base.routineItems,
+        { id: 'item-journal', routineId: 'nightly', target: { kind: 'trackable' as const, trackableId: 'journal' }, sortOrder: 3, enabled: true, frequency: 'every_day' as const, completionBehavior: 'optional' as const, trendTrackingMode: 'none' as const, eventReminderBehavior: 'never' as const, ...sync },
+        { id: 'item-location', routineId: 'nightly', target: { kind: 'trackable' as const, trackableId: 'location' }, sortOrder: 4, enabled: true, frequency: 'every_day' as const, completionBehavior: 'optional' as const, trendTrackingMode: 'none' as const, eventReminderBehavior: 'never' as const, ...sync },
+      ],
+      trackables: [
+        ...base.trackables,
+        { id: 'injection', categoryId: 'medication', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'treatment', recordSemantics: 'occurrence', quickLogEnabled: true, ...sync },
+        { id: 'medication-type', categoryId: 'medication', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'treatment', ...sync },
+        { id: 'journal', categoryId: 'mental', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'context', ...sync },
+        { id: 'location', categoryId: 'skin', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'symptom', ...sync },
+      ],
+      trackableVersions: [
+        ...base.trackableVersions,
+        { id: 'injection-v1', trackableId: 'injection', version: 1, name: 'Medication Taken', inputType: 'boolean', valueDirection: 'neutral', configuration: {}, retiredAt: null, ...sync },
+        { id: 'medication-type-v1', trackableId: 'medication-type', version: 1, name: 'Medication Type', inputType: 'text', valueDirection: 'neutral', configuration: {}, retiredAt: null, ...sync },
+        { id: 'journal-v1', trackableId: 'journal', version: 1, name: 'Daily note', inputType: 'text', valueDirection: 'neutral', configuration: {}, retiredAt: null, ...sync },
+        { id: 'location-v1', trackableId: 'location', version: 1, name: 'Location', inputType: 'single_choice', valueDirection: 'neutral', configuration: {}, retiredAt: null, ...sync },
+      ],
+      trackableOptions: [...base.trackableOptions, { id: 'location-cheek-v1', optionId: 'location-cheek', trackableId: 'location', trackableVersion: 1, storedValue: 'internal-cheek-value', label: 'Left Cheek', sortOrder: 0, active: true, ...sync }],
+      trackableFields: [{ id: 'field-medication-type', ownerTrackableId: 'injection', ownerTrackableVersion: 1, fieldTrackableId: 'medication-type', fieldTrackableVersion: 1, sortOrder: 0, enabled: true, completionBehavior: 'optional', ...sync }],
+    }
+  }
+
   it('searches event names and notes newest first', () => {
     expect(searchHistory(fixture(), 'migraine', '2026-08-11').results).toHaveLength(2)
     expect(searchHistory(fixture(), 'travel', '2026-08-11').totalMatches).toBe(2)
+  })
+
+  it('matches Trackable and category names through the normalized record index', () => {
+    const data = recordedValueFixture()
+    expect(searchHistory(data, 'Medication Taken', '2026-08-11').results.map((item) => item.recordId)).toEqual(['injection-record'])
+    expect(searchHistory(data, 'Medication and Treatment', '2026-08-11').results.map((item) => item.recordId)).toEqual(['injection-record'])
+  })
+
+  it('matches free-text values from Quick Logs and Daily Check-Ins case-insensitively', () => {
+    const data = recordedValueFixture()
+    expect(searchHistory(data, 'HUMIRA', '2026-08-11').results[0]).toMatchObject({ recordId: 'injection-record', identity: 'Medication Taken' })
+    expect(searchHistory(data, 'felt RESTED', '2026-08-11').results[0]).toMatchObject({ recordId: 'routine-1', identity: 'Daily Check-In' })
+  })
+
+  it('resolves selected option labels without indexing internal option identities', () => {
+    const data = recordedValueFixture()
+    expect(searchHistory(data, 'left cheek', '2026-08-11').results[0]).toMatchObject({ recordId: 'routine-1' })
+    expect(searchHistory(data, 'location-cheek', '2026-08-11').results).toEqual([])
+    expect(searchHistory(data, 'internal-cheek-value', '2026-08-11').results).toEqual([])
+  })
+
+  it('shows the matching nested field and value as result context', () => {
+    const result = searchHistory(recordedValueFixture(), 'Humira', '2026-08-11').results[0]
+    expect(result.context).toBe('Medication Taken · Medication Type: Humira · Medication & Treatment')
+  })
+
+  it('normalizes case, accents, punctuation, ampersands, and whitespace', () => {
+    expect(normalizeHistorySearchText('  Mood & MÉNTAL — Notes!  ')).toBe('mood and mental notes')
+  })
+
+  it('indexes only exact recorded numeric values for numeric-only queries', () => {
+    expect(searchHistory(fixture(), '0', '2026-08-11').results.map((item) => item.recordId)).toEqual(['routine-1'])
+    expect(searchHistory(fixture(), 'Better', '2026-08-11').results.map((item) => item.recordId)).toEqual(['routine-1'])
+  })
+
+  it('includes recorded user-facing values in suggestions without exposing IDs', () => {
+    const data = recordedValueFixture()
+    expect(historySearchSuggestions(data, 'hum')).toEqual([{ label: 'Humira' }])
+    expect(historySearchSuggestions(data, 'location-cheek')).toEqual([])
+    expect(buildHistorySearchIndex(data).find((item) => item.recordId === 'injection-record')?.searchableTerms.join(' ')).not.toContain('field-medication-type')
   })
 
   it('uses Daily Check-In for user-facing search results even with legacy routine data', () => {

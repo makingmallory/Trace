@@ -94,6 +94,26 @@ export interface HistorySearchFilters {
   recordType?: 'all' | 'event' | 'check-in'
 }
 
+export interface HistorySearchValue {
+  label: string
+  value: string
+  supplementalValues: readonly string[]
+  category?: string
+  numericValue?: string
+  recorded: boolean
+}
+
+export interface HistorySearchIndexEntry {
+  recordId: string
+  localDate: string
+  kind: 'event' | 'check-in'
+  identity: string
+  category?: string
+  timing: string
+  values: readonly HistorySearchValue[]
+  searchableTerms: readonly string[]
+}
+
 export interface MetricChoice {
   trackableId: string
   name: string
@@ -222,7 +242,7 @@ export function compareHistoryEvents(left: LogRecord, right: LogRecord): number 
 
 function selectionsFor(data: HistoryData, observation: Observation): readonly TrackableOption[] {
   const ids = new Set(data.observationSelections.filter((item) => item.observationId === observation.id && !item.deletedAt).map((item) => item.optionId))
-  return data.trackableOptions.filter((option) => option.trackableId === observation.trackableId && option.trackableVersion === observation.trackableVersion && ids.has(option.optionId) && !option.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder)
+  return data.trackableOptions.filter((option) => option.trackableId === observation.trackableId && option.trackableVersion === observation.trackableVersion && ids.has(option.optionId)).sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
 export function formatHistoryAnswer(data: HistoryData, observation: Observation): string {
@@ -346,30 +366,110 @@ export function buildWeekAgenda(data: HistoryData, dates: readonly string[], tod
   })
 }
 
-function searchableRecord(data: HistoryData, record: LogRecord): { identity: string; terms: string; context: string; timing: string } | null {
-  const observations = data.observations.filter((item) => item.logRecordId === record.id && !item.deletedAt)
-  const contexts = observations.flatMap((observation) => {
-    const trackable = data.trackables.find((item) => item.id === observation.trackableId)
-    const version = data.trackableVersions.find((item) => item.trackableId === observation.trackableId && item.version === observation.trackableVersion)
-    const category = trackable ? data.categories.find((item) => item.id === trackable.categoryId)?.name : undefined
-    const value = formatHistoryAnswer(data, observation)
-    return version ? [`${version.name}: ${value}`, ...(category ? [category] : []), ...(trackable?.tags ?? [])] : []
+export function normalizeHistorySearchText(value: string): string {
+  return value.normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLocaleLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[\p{P}\p{S}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function historyDateTerms(localDate: string): readonly string[] {
+  const [year, month, day] = localDate.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  return [
+    localDate,
+    new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' }).format(date),
+    new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(date),
+    new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(date),
+  ]
+}
+
+function numericSearchValue(observation: Observation): string | undefined {
+  if (observation.answer.state !== 'answered') return undefined
+  const value = observation.answer.value
+  return ['scale', 'number', 'duration'].includes(value.kind) ? String(value.value) : undefined
+}
+
+function additionalFieldOwner(data: HistoryData, record: LogRecord, observation: Observation): { trackable: Trackable; field: TrackableField } | undefined {
+  const fields = data.trackableFields ?? []
+  const possibleOwners = record.trackableId
+    ? new Set([record.trackableId])
+    : new Set(routineItemsForRecord(data, record).flatMap((item) => item.target.kind === 'trackable' ? [item.target.trackableId] : []))
+  const field = fields.find((item) => item.enabled && !item.deletedAt && item.fieldTrackableId === observation.trackableId
+    && item.fieldTrackableVersion === observation.trackableVersion && possibleOwners.has(item.ownerTrackableId))
+  const trackable = field ? data.trackables.find((item) => item.id === field.ownerTrackableId) : undefined
+  return field && trackable ? { field, trackable } : undefined
+}
+
+function searchValueForObservation(data: HistoryData, record: LogRecord, observation: Observation): HistorySearchValue | null {
+  const version = data.trackableVersions.find((item) => item.trackableId === observation.trackableId && item.version === observation.trackableVersion && !item.deletedAt)
+  if (!version) return null
+  const trackable = data.trackables.find((item) => item.id === observation.trackableId)
+  const owner = additionalFieldOwner(data, record, observation)
+  const ownerVersionNumber = owner?.field.ownerTrackableVersion ?? owner?.trackable.currentVersion
+  const ownerVersion = owner ? data.trackableVersions.find((item) => item.trackableId === owner.trackable.id && item.version === ownerVersionNumber) : undefined
+  const categoryTrackable = owner?.trackable ?? trackable
+  const category = categoryTrackable ? data.categories.find((item) => item.id === categoryTrackable.categoryId && !item.deletedAt)?.name : undefined
+  const numericValue = numericSearchValue(observation)
+  return {
+    label: ownerVersion ? `${ownerVersion.name} · ${version.name}` : version.name,
+    value: formatHistoryAnswer(data, observation),
+    supplementalValues: observation.trendValue ? [observation.trendValue] : [],
+    recorded: observation.answer.state === 'answered',
+    ...(category ? { category } : {}),
+    ...(numericValue ? { numericValue } : {}),
+  }
+}
+
+/** Builds only user-facing search terms; stable IDs and raw serialized payloads are intentionally excluded. */
+export function buildHistorySearchIndex(data: HistoryData): readonly HistorySearchIndexEntry[] {
+  return activeRecords(data).flatMap((record): HistorySearchIndexEntry[] => {
+    const observations = data.observations.filter((item) => item.logRecordId === record.id && !item.deletedAt)
+    const values = observations.flatMap((observation) => searchValueForObservation(data, record, observation) ?? [])
+    const timing = isQuickLogRecord(record) ? formatEventTiming(record) : ''
+    let identity: string
+    let category: string | undefined
+    let definitionTerms: readonly (string | undefined)[]
+    if (isQuickLogRecord(record)) {
+      const definition = definitionForRecord(data, record)
+      if (!definition) return []
+      identity = definition.name
+      category = data.categories.find((item) => item.id === definition.categoryId && !item.deletedAt)?.name
+      definitionTerms = [definition.name, definition.description, category]
+    } else if (record.recordKind === 'routine') {
+      identity = 'Daily Check-In'
+      definitionTerms = [data.routines.find((item) => item.id === record.routineId)?.name, 'Daily Check-In', 'Nightly Check-In']
+    } else return []
+
+    const trackableTags = observations.flatMap((observation) => data.trackables.find((item) => item.id === observation.trackableId)?.tags ?? [])
+    const searchableTerms = [
+      ...definitionTerms,
+      ...historyDateTerms(record.localDate),
+      timing,
+      ...trackableTags,
+      ...values.flatMap((value) => [value.label, value.category, ...(value.recorded ? [value.value, ...value.supplementalValues, `${value.label} ${value.value} ${value.supplementalValues.join(' ')}`] : [])]),
+    ].filter((term): term is string => Boolean(term?.trim())).map(normalizeHistorySearchText).filter(Boolean)
+    return [{ recordId: record.id, localDate: record.localDate, kind: isQuickLogRecord(record) ? 'event' : 'check-in', identity, category, timing, values, searchableTerms }]
   })
-  if (isQuickLogRecord(record)) {
-    const definition = definitionForRecord(data, record)
-    if (!definition) return null
-    const category = data.categories.find((item) => item.id === definition.categoryId)?.name ?? ''
-    return { identity: definition.name, terms: [definition.name, definition.description, category, ...contexts].filter(Boolean).join(' '), context: contexts[0] ?? formatEventTiming(record), timing: formatEventTiming(record) }
-  }
-  if (record.recordKind === 'routine') {
-    const routine = data.routines.find((item) => item.id === record.routineId)
-    return { identity: 'Daily Check-In', terms: [routine?.name, 'daily check-in', 'nightly check-in', record.status, ...contexts].filter(Boolean).join(' '), context: contexts[0] ?? `${record.status} check-in`, timing: '' }
-  }
-  return null
+}
+
+function isNumericQuery(term: string): boolean { return /^[+-]?\d+(?:[.,]\d+)?$/.test(term) }
+
+function matchingSearchContext(entry: HistorySearchIndexEntry, term: string): string {
+  const valueMatch = entry.values.find((value) => {
+    if (isNumericQuery(term)) return value.numericValue === term.replace(',', '.')
+    return [value.label, value.category, ...(value.recorded ? [value.value, ...value.supplementalValues, `${value.label} ${value.value} ${value.supplementalValues.join(' ')}`] : [])].some((candidate) => candidate && normalizeHistorySearchText(candidate).includes(term))
+  })
+  if (valueMatch) return `${valueMatch.label}: ${[valueMatch.value, ...valueMatch.supplementalValues].join(' · ')}${valueMatch.category ? ` · ${valueMatch.category}` : ''}`
+  if (entry.category && normalizeHistorySearchText(entry.category).includes(term)) return entry.category
+  return entry.timing || entry.values[0] ? (entry.values[0] ? `${entry.values[0].label}: ${entry.values[0].value}` : entry.timing) : entry.kind === 'check-in' ? 'Daily Check-In' : entry.identity
 }
 
 export function parseHistoryQuery(query: string): { term: string; last: boolean } {
-  const normalized = query.trim().toLowerCase().replace(/[?.!]+$/g, '').replace(/^when (?:was|did) (?:my |i )?/i, '')
+  const normalized = normalizeHistorySearchText(query).replace(/^when (?:was|did) (?:my |i )?/, '')
   const last = /^(?:my )?last\s+/.test(normalized) || /^last occurrence (?:of )?/.test(normalized)
   const term = normalized.replace(/^(?:my )?last\s+/, '').replace(/^last occurrence (?:of )?/, '').trim()
   return { term, last }
@@ -379,36 +479,50 @@ export function searchHistory(data: HistoryData, query: string, today: string, f
   const parsed = parseHistoryQuery(query)
   const hasFilters = Boolean(filters.from || filters.to || (filters.recordType && filters.recordType !== 'all'))
   if (!parsed.term && !hasFilters) return { isLastOccurrence: parsed.last, normalizedQuery: '', totalMatches: 0, results: [] }
-  const orderedRecords = [...activeRecords(data)].sort((a, b) => b.localDate.localeCompare(a.localDate) || (isQuickLogRecord(a) && isQuickLogRecord(b) ? compareHistoryEvents(b, a) : b.updatedAt.localeCompare(a.updatedAt)))
-  const results = orderedRecords.flatMap((record): HistorySearchResult[] => {
-    const indexed = searchableRecord(data, record)
-    const kind = isQuickLogRecord(record) ? 'event' : record.recordKind === 'routine' ? 'check-in' : null
-    if (!indexed || !kind || (parsed.term && !indexed.terms.toLowerCase().includes(parsed.term))) return []
-    if (filters.from && record.localDate < filters.from) return []
-    if (filters.to && record.localDate > filters.to) return []
-    if (filters.recordType && filters.recordType !== 'all' && kind !== filters.recordType) return []
-    return [{ recordId: record.id, localDate: record.localDate, kind: isQuickLogRecord(record) ? 'event' : 'check-in', identity: indexed.identity, context: indexed.context, timing: indexed.timing, daysAgo: daysBetween(record.localDate, today) }]
+  const recordsById = new Map(activeRecords(data).map((record) => [record.id, record]))
+  const index = [...buildHistorySearchIndex(data)].sort((a, b) => {
+    const dateOrder = b.localDate.localeCompare(a.localDate)
+    if (dateOrder) return dateOrder
+    const left = recordsById.get(a.recordId)!
+    const right = recordsById.get(b.recordId)!
+    return isQuickLogRecord(left) && isQuickLogRecord(right) ? compareHistoryEvents(right, left) : right.updatedAt.localeCompare(left.updatedAt)
+  })
+  const results = index.flatMap((entry): HistorySearchResult[] => {
+    const matches = !parsed.term || (isNumericQuery(parsed.term)
+      ? entry.values.some((value) => value.numericValue === parsed.term.replace(',', '.'))
+      : entry.searchableTerms.some((term) => term.includes(parsed.term)))
+    if (!matches) return []
+    if (filters.from && entry.localDate < filters.from) return []
+    if (filters.to && entry.localDate > filters.to) return []
+    if (filters.recordType && filters.recordType !== 'all' && entry.kind !== filters.recordType) return []
+    return [{ recordId: entry.recordId, localDate: entry.localDate, kind: entry.kind, identity: entry.identity, context: matchingSearchContext(entry, parsed.term), timing: entry.timing, daysAgo: daysBetween(entry.localDate, today) }]
   })
   return { isLastOccurrence: parsed.last, normalizedQuery: parsed.term, totalMatches: results.length, results: parsed.last ? results.slice(0, 1) : results }
 }
 
 export function historySearchSuggestions(data: HistoryData, query: string, limit = 6): readonly HistorySearchSuggestion[] {
-  const term = query.trim().toLowerCase()
+  const term = normalizeHistorySearchText(query)
   if (!term) return []
+  const recordedValues = buildHistorySearchIndex(data).flatMap((entry) => entry.values.flatMap((value) => {
+    const candidates = [value.value, ...value.supplementalValues]
+    return value.recorded ? candidates.filter((candidate, index) => normalizeHistorySearchText(candidate) && !(index === 0 && value.numericValue) && candidate.length <= 80) : []
+  }))
   const labels = [
     ...[...quickLogDefinitions(data).values()].map((item) => item.name),
     ...data.trackableVersions.filter((item) => !item.deletedAt).map((item) => item.name),
     ...data.categories.filter((item) => !item.deletedAt).map((item) => item.name),
     ...data.trackables.filter((item) => !item.deletedAt).flatMap((item) => item.tags),
+    ...recordedValues,
   ]
   const deduplicated = new Map<string, string>()
   for (const label of labels) {
     const trimmed = label.trim()
-    if (trimmed && !deduplicated.has(trimmed.toLowerCase())) deduplicated.set(trimmed.toLowerCase(), trimmed)
+    const normalized = normalizeHistorySearchText(trimmed)
+    if (normalized && !deduplicated.has(normalized)) deduplicated.set(normalized, trimmed)
   }
   return [...deduplicated.values()]
-    .filter((label) => label.toLowerCase().includes(term))
-    .sort((a, b) => Number(!a.toLowerCase().startsWith(term)) - Number(!b.toLowerCase().startsWith(term)) || a.localeCompare(b))
+    .filter((label) => normalizeHistorySearchText(label).includes(term))
+    .sort((a, b) => Number(!normalizeHistorySearchText(a).startsWith(term)) - Number(!normalizeHistorySearchText(b).startsWith(term)) || a.localeCompare(b))
     .slice(0, limit)
     .map((label) => ({ label }))
 }
