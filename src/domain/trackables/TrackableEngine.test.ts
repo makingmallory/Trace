@@ -153,6 +153,19 @@ describe('TrackableEngine', () => {
     expect((await engine.getLibrary()).active).toHaveLength(1)
   })
 
+  it('reactivates an archived ready-made Trackable instead of duplicating its identity', async () => {
+    const { engine, repository } = setup()
+    const created = await engine.createFromPreset('preset.skin.acne-severity')
+    await engine.setTrackableActive(created.trackable.id, false)
+
+    const restored = await engine.createFromPreset('preset.skin.acne-severity')
+
+    expect(restored.trackable.id).toBe(created.trackable.id)
+    expect(restored.trackable).toMatchObject({ active: true, archivedAt: null })
+    expect(await repository.getAll('trackables')).toHaveLength(1)
+    expect((await engine.getLibrary()).archived).toHaveLength(0)
+  })
+
   it('skips ready-made Trackables already active when adding a Starter Pack', async () => {
     const { engine } = setup()
     await engine.createFromPreset('preset.skin.acne-severity')

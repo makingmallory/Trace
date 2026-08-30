@@ -537,18 +537,10 @@ h1 {
 .status-chip { display: inline-flex; padding: 0.25rem 0.55rem; border-radius: var(--radius-pill); font-size: 0.72rem; font-weight: 850; }
 .status-chip--completed { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface)); }
 .status-chip--draft { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface)); }
-.history-answer-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-lg); }
-.history-answer-widget { min-width: 0; padding: var(--space-md); border: 1px solid color-mix(in srgb, var(--color-primary) 14%, var(--color-border)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); }
-.history-answer-groups h4 { margin: 0 0 var(--space-sm); color: var(--color-primary-strong); font-size: 0.88rem; }
-.history-answer-groups dl,
 .event-field-summary { display: grid; gap: var(--space-xs); margin: 0; }
-.history-answer-groups dl > div,
 .event-field-summary > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-md); padding: var(--space-xs) 0; border-bottom: 1px solid var(--color-border); }
-.history-answer-groups dt,
 .event-field-summary dt { min-width: 0; color: var(--color-muted-text); }
-.history-answer-groups dd,
 .event-field-summary dd { margin: 0; font-weight: 750; text-align: right; }
-.history-answer-groups .is-missing,
 .event-field-summary .is-missing { font-style: italic; opacity: 0.72; }
 .history-events { display: grid; gap: var(--space-md); }
 .history-events .section-heading h3 { margin: 0; }
@@ -1386,7 +1378,6 @@ h1 {
   .history-calendar-controls { grid-template-columns: 1fr; }
   .history-view-switch { width: 100%; }
   .calendar-color-panel { position: relative; top: auto; right: auto; width: 100%; }
-  .history-answer-groups { grid-template-columns: 1fr; }
   .day-detail__heading { align-items: flex-start; flex-direction: column; }
   .history-record__heading { align-items: flex-start; }
 
@@ -1880,10 +1871,8 @@ h1 {
 .app-shell--history .history-record__heading { gap: 0.65rem; }
 .app-shell--history .history-record__heading h3 { font-size: 1rem; }
 .app-shell--history .record-icon-action { width: 2.35rem; height: 2.35rem; border-radius: 0.75rem; }
-.app-shell--history .history-answer-groups { gap: 0.55rem; }
-.app-shell--history .history-answer-widget { padding: 0.75rem; border-radius: 0.75rem; }
-.app-shell--history .history-answer-groups dl > div, .app-shell--history .event-field-summary > div { gap: 0.7rem; }
-.app-shell--history .history-answer-groups dd, .app-shell--history .event-field-summary dd { overflow-wrap: anywhere; }
+.app-shell--history .event-field-summary > div { gap: 0.7rem; }
+.app-shell--history .event-field-summary dd { overflow-wrap: anywhere; }
 .app-shell--history .history-events { gap: 0.7rem; }
 .app-shell--history .history-event__identity { gap: 0.7rem; }
 .app-shell--history .history-event__identity > span { flex-basis: 2.4rem; height: 2.4rem; border-radius: 0.75rem; font-size: 1.1rem; }
@@ -1900,9 +1889,8 @@ h1 {
   .app-shell--history .calendar-day { min-height: 3.35rem; padding: 0.25rem; }
   .app-shell--history .calendar-day__number { font-size: 0.78rem; }
   .app-shell--history .day-detail__heading { align-items: flex-start; flex-direction: column; }
-  .app-shell--history .history-answer-groups { grid-template-columns: 1fr; }
-  .app-shell--history .history-answer-groups dl > div, .app-shell--history .event-field-summary > div { grid-template-columns: 1fr; gap: 0.12rem; }
-.app-shell--history .history-answer-groups dd, .app-shell--history .event-field-summary dd { text-align: left; }
+  .app-shell--history .event-field-summary > div { grid-template-columns: 1fr; gap: 0.12rem; }
+.app-shell--history .event-field-summary dd { text-align: left; }
 }
 
 /* History structural correction: compact mobile calendar and selected-day detail. */

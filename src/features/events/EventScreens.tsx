@@ -10,7 +10,7 @@ import { QuestionInput } from '../checkin/QuestionInput.tsx'
 import { eventEngine } from './eventEngine.ts'
 import { endpointInputFromRecord, type EndpointInputState } from './eventTimingInput.ts'
 import { homeEventEditPath, homeEventTiming } from './homeEventSummary.ts'
-import { resolveQuickLogReturnTo } from './quickLogNavigation.ts'
+import { quickLogPickerPath, quickLogPickerReturnPath, resolveQuickLogReturnTo } from './quickLogNavigation.ts'
 import { ActionIcon } from '../../components/ActionIcons.tsx'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
 import { TrackableFilterControls } from '../../components/TrackableFilterControls.tsx'
@@ -38,7 +38,7 @@ export function QuickLogScreen() {
   const results = useMemo(() => (library?.active ?? []).filter(({ definition }) => (categoryId === 'all' || definition.categoryId === categoryId) && `${definition.name} ${definition.description ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())), [library, query, categoryId])
   if (!library) return <Loading />
   return <section className="screen event-picker">
-    <header className="trace-page-header screen__heading compact-heading"><InlineBackHeader to="/" label="Quick Log" ariaLabel="Back to Home" /><h1>What happened?</h1><p className="screen__description">Choose a Quick Log Trackable, then save it in a few taps.</p></header>
+    <header className="trace-page-header screen__heading compact-heading"><InlineBackHeader to={quickLogPickerReturnPath(historyDate)} label="Quick Log" ariaLabel={historyDate ? 'Back to selected History day' : 'Back to Home'} /><h1>What happened?</h1><p className="screen__description">Choose a Quick Log Trackable, then save it in a few taps.</p></header>
     {recent.length > 0 && <section className="event-section"><div className="section-heading"><h2>Recent</h2></div><div className="event-choice-grid">{recent.map((item) => <EventChoice key={item.definition.id} item={item} categories={library.categories} historyDate={historyDate} />)}</div></section>}
     <section className="event-section"><div className="section-heading"><h2>Quick Log Trackables</h2><Link className="quick-log-manage-button" to="/trackables/manage">Manage</Link></div><TrackableFilterControls categories={library.categories.filter((category) => category.active)} search={query} categoryId={categoryId} onSearchChange={setQuery} onCategoryChange={setCategoryId} searchLabel="Search Quick Log Trackables" placeholder="Search Trackables" />
       <div className="event-choice-grid">{results.map((item) => <EventChoice key={item.definition.id} item={item} categories={library.categories} historyDate={historyDate} />)}</div>{results.length === 0 && <p className="empty-copy">No matching Quick Log Trackables.</p>}
@@ -102,7 +102,7 @@ export function LogEventScreen() {
       navigate(recordId ? returnTo : searchParams.get('date') ? `/history?date=${result.record.localDate}` : '/', { replace: true, state: { loggedEventId: result.record.id } })
     } catch (caught) { setError(caught instanceof EventValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this Quick Log entry.') } finally { setBusy(false) }
   }
-  return <section className="screen log-event-screen"><header className="trace-page-header event-log-header page-header"><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><InlineBackHeader to={recordId ? returnTo : '/quick-log'} replace={Boolean(recordId)} label={recordId ? 'Edit Quick Log entry' : 'Quick Log'} /><h1>{details.definition.name}</h1></div></div></header>
+  return <section className="screen log-event-screen"><header className="trace-page-header event-log-header page-header"><div className="event-title"><span aria-hidden="true">{iconGlyph(details.definition.icon)}</span><div><InlineBackHeader to={recordId ? returnTo : quickLogPickerPath(searchParams.get('date'))} replace={Boolean(recordId)} label={recordId ? 'Edit Quick Log entry' : 'Quick Log'} /><h1>{details.definition.name}</h1></div></div></header>
     <form className="event-log-form" onSubmit={submit}>
       <section className="event-timing-card"><h2>When?</h2>
         <PointTimingInput value={start} onChange={setStart} dayOnly={false} />

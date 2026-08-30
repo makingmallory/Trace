@@ -8,6 +8,14 @@ export function quickLogEditPath(recordId: string, returnTo: string): string {
   return `/history/quick-log/${encodeURIComponent(recordId)}/edit?returnTo=${encodeURIComponent(returnTo)}`
 }
 
+export function quickLogPickerPath(localDate?: string | null): string {
+  return localDate && validLocalDate.test(localDate) ? `/quick-log?date=${localDate}` : '/quick-log'
+}
+
+export function quickLogPickerReturnPath(localDate?: string | null): string {
+  return localDate && validLocalDate.test(localDate) ? historyReturnPath(localDate) : '/'
+}
+
 export function resolveQuickLogReturnTo(returnTo: string | null, fallbackDate: string): string {
   if (!returnTo) return historyReturnPath(fallbackDate)
   if (returnTo === '/' || returnTo === '/check-in' || returnTo === '/quick-log') return returnTo

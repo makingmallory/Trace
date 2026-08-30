@@ -1,11 +1,16 @@
-import { useState, type FormEvent } from 'react'
+import { lazy, Suspense, useState, type FormEvent } from 'react'
 import type { DataRole, EventTimingMode, InputType, ObservationAnswer, ValueDirection } from '../../domain/models/index.ts'
 import { TrackableValidationError, type TrackableDetails, type TrackableDraft, type TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
 import { builtInIcons, iconGlyph } from '../../presets/iconLibrary.ts'
 import { trackableEngine } from './trackableEngine.ts'
 import { inputTypes } from './trackableUi.ts'
-import { TraceEmojiPicker } from './TraceEmojiPicker.tsx'
 import { firstGrapheme } from './emojiInput.ts'
+
+const TraceEmojiPicker = lazy(() => import('./TraceEmojiPicker.tsx').then((module) => ({ default: module.TraceEmojiPicker })))
+
+function EmojiPicker({ onSelect }: { onSelect: (emoji: string) => void }) {
+  return <Suspense fallback={<p className="save-status">Opening emoji picker…</p>}><TraceEmojiPicker onSelect={onSelect} /></Suspense>
+}
 
 const roleLabels: Record<DataRole, string> = {
   symptom: 'Symptom', treatment: 'Treatment', behavior: 'Behavior', exposure: 'Exposure', context: 'Context',
@@ -70,7 +75,7 @@ function detailsDraft(details: TrackableDetails): TrackableDraft {
 
 export function EmojiIconField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false)
-  return <div className="form-field icon-field"><span>Icon</span><div className="icon-field__control"><input aria-label="Icon" value={value} onChange={(event) => onChange(firstGrapheme(event.target.value))} placeholder="🙂" /><button type="button" aria-label="Choose emoji" aria-expanded={open} onClick={() => setOpen((current) => !current)}>☺</button></div>{open ? <TraceEmojiPicker onSelect={(emoji) => { onChange(firstGrapheme(emoji)); setOpen(false) }} /> : null}</div>
+  return <div className="form-field icon-field"><span>Icon</span><div className="icon-field__control"><input aria-label="Icon" value={value} onChange={(event) => onChange(firstGrapheme(event.target.value))} placeholder="🙂" /><button type="button" aria-label="Choose emoji" aria-expanded={open} onClick={() => setOpen((current) => !current)}>☺</button></div>{open ? <EmojiPicker onSelect={(emoji) => { onChange(firstGrapheme(emoji)); setOpen(false) }} /> : null}</div>
 }
 
 export function TrackableEditor({ details, library, onCancel, onSaved }: { details?: TrackableDetails; library: TrackableLibrary; onCancel: () => void; onSaved: () => void }) {
@@ -148,7 +153,7 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
       {draft.inputType === 'duration' && <p className="version-note">Durations are stored in minutes so they remain consistent for future analysis.</p>}
       <label className="form-field"><span>Tags <small>comma separated</small></span><input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="morning, wellness" /></label>
       <fieldset className="icon-picker"><legend>Icon</legend><div className="segmented segmented--small"><button type="button" aria-pressed={iconMode === 'library'} onClick={() => { setIconMode('library'); setDraft({ ...draft, icon: { type: 'library', value: 'sparkle' } }) }}>Built-in</button><button type="button" aria-pressed={iconMode === 'emoji'} onClick={() => { setIconMode('emoji'); setDraft({ ...draft, icon: { type: 'emoji', value: '✨' } }) }}>Emoji</button></div>{iconMode === 'library' ? <div className="icon-grid">{builtInIcons.map((icon) => <button type="button" key={icon.id} className={draft.icon?.type === 'library' && draft.icon.value === icon.id ? 'is-selected' : ''} aria-label={icon.label} title={icon.label} onClick={() => setDraft({ ...draft, icon: { type: 'library', value: icon.id } })}>{icon.glyph}</button>)}</div> : <label className="form-field"><span>Your emoji</span><input value={draft.icon?.type === 'emoji' ? draft.icon.value : ''} onChange={(event) => setDraft({ ...draft, icon: { type: 'emoji', value: event.target.value } })} maxLength={16} /></label>}</fieldset>
-      {iconMode === 'emoji' ? <TraceEmojiPicker onSelect={(emoji) => setDraft((current) => ({ ...current, icon: { type: 'emoji', value: emoji } }))} /> : null}
+      {iconMode === 'emoji' ? <EmojiPicker onSelect={(emoji) => setDraft((current) => ({ ...current, icon: { type: 'emoji', value: emoji } }))} /> : null}
     </div></details>
     {details && <p className="version-note">Changing what an answer means creates a new version. Old records keep their original meaning.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
