@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { InMemoryDataRepository } from '../../data/local/InMemoryDataRepository.ts'
 import { trackablePresets } from '../../presets/trackablePresets.ts'
-import { TrackableEngine, TrackableValidationError, type TrackableDraft } from './TrackableEngine.ts'
+import { normalizeTrackableName, TrackableEngine, TrackableNameConflictError, TrackableValidationError, type TrackableDraft } from './TrackableEngine.ts'
 
 function setup() {
   let id = 0
@@ -47,6 +47,45 @@ describe('TrackableEngine', () => {
     expect(created.trackable.tags).toEqual(['personal'])
 
     await expect(engine.createTrackable({ ...customDraft, scaleMax: 0 })).rejects.toBeInstanceOf(TrackableValidationError)
+  })
+
+  it('uses one canonical Trackable-name key for exact, case, whitespace, and cross-category collisions', async () => {
+    const { engine } = setup()
+    await engine.createTrackable({ ...customDraft, name: 'Blood Pressure' })
+    expect(normalizeTrackableName('  BLOOD   pressure  ')).toBe('blood pressure')
+    for (const name of ['Blood Pressure', 'blood pressure', '  Blood Pressure  ', 'Blood   Pressure']) {
+      await expect(engine.createTrackable({ ...customDraft, name, categoryId: 'category.pain' })).rejects.toThrow('A Trackable named Blood Pressure already exists in Custom / Other.')
+    }
+  })
+
+  it('serializes rapid duplicate creates so only one can persist', async () => {
+    const { engine } = setup()
+    const results = await Promise.allSettled([
+      engine.createTrackable({ ...customDraft, name: 'Rapid add' }),
+      engine.createTrackable({ ...customDraft, name: '  RAPID   ADD ' }),
+    ])
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect((await engine.getLibrary()).active).toHaveLength(1)
+  })
+
+  it('allows a Trackable to keep its own name but blocks renaming it to another Trackable name', async () => {
+    const { engine } = setup()
+    const migraine = await engine.createTrackable({ ...customDraft, name: 'Migraine' })
+    const headache = await engine.createTrackable({ ...customDraft, name: 'Headache' })
+    await expect(engine.updateTrackable(migraine.trackable.id, { ...customDraft, name: '  migraine  ' })).resolves.toMatchObject({ trackable: { id: migraine.trackable.id } })
+    await expect(engine.updateTrackable(migraine.trackable.id, { ...customDraft, name: 'HEADACHE' })).rejects.toThrow('A Trackable named Headache already exists')
+    expect((await engine.getDetails(headache.trackable.id)).version.name).toBe('Headache')
+  })
+
+  it('keeps an archived name collision intact until its existing permanent identity is restored', async () => {
+    const { engine, repository } = setup()
+    const created = await engine.createTrackable({ ...customDraft, name: 'Migraine' })
+    await engine.setTrackableActive(created.trackable.id, false)
+    await expect(engine.createTrackable({ ...customDraft, name: ' migraine ' })).rejects.toMatchObject({
+      name: 'TrackableNameConflictError', existingTrackableId: created.trackable.id, archived: true,
+    } satisfies Partial<TrackableNameConflictError>)
+    await engine.setTrackableActive(created.trackable.id, true)
+    expect((await repository.getAll('trackables')).map((trackable) => trackable.id)).toEqual([created.trackable.id])
   })
 
   it('keeps stable option IDs for unchanged meanings when a new version is created', async () => {
@@ -149,7 +188,7 @@ describe('TrackableEngine', () => {
   it('prevents adding an active ready-made Trackable twice', async () => {
     const { engine } = setup()
     await engine.createFromPreset('preset.skin.acne-severity')
-    await expect(engine.createFromPreset('preset.skin.acne-severity')).rejects.toThrow('already in your active Trackables')
+    await expect(engine.createFromPreset('preset.skin.acne-severity')).rejects.toThrow('A Trackable named Acne Severity already exists in Skin.')
     expect((await engine.getLibrary()).active).toHaveLength(1)
   })
 
@@ -166,6 +205,17 @@ describe('TrackableEngine', () => {
     expect((await engine.getLibrary()).archived).toHaveLength(0)
   })
 
+  it('uses global name matching for Library additions and restores matching archived presets', async () => {
+    const { engine, repository } = setup()
+    const custom = await engine.createTrackable({ ...customDraft, name: '  Acne   Severity  ', categoryId: 'category.pain' })
+    await expect(engine.createFromPreset('preset.skin.acne-severity')).rejects.toThrow('A Trackable named Acne   Severity already exists in Pain.')
+    expect(await engine.isPresetActive('preset.skin.acne-severity')).toBe(true)
+    await engine.setTrackableActive(custom.trackable.id, false)
+    const restored = await engine.createFromPreset('preset.skin.acne-severity')
+    expect(restored.trackable.id).toBe(custom.trackable.id)
+    expect((await repository.getAll('trackables')).map((trackable) => trackable.id)).toEqual([custom.trackable.id])
+  })
+
   it('skips ready-made Trackables already active when adding a Starter Pack', async () => {
     const { engine } = setup()
     await engine.createFromPreset('preset.skin.acne-severity')
@@ -174,5 +224,25 @@ describe('TrackableEngine', () => {
     const active = (await engine.getLibrary()).active
     expect(active.filter(({ version }) => version.name === 'Acne Severity')).toHaveLength(1)
     expect(active).toHaveLength(6)
+  })
+
+  it('keeps Starter Pack Add All and Add Remaining duplicate-safe across repeated actions', async () => {
+    const { engine } = setup()
+    await engine.createTrackable({ ...customDraft, name: 'Acne Severity', categoryId: 'category.pain' })
+    const firstAdd = await engine.createFromPack('pack.skin-tracking')
+    const secondAdd = await engine.createFromPack('pack.skin-tracking')
+    const active = (await engine.getLibrary()).active
+    expect(firstAdd).toHaveLength(5)
+    expect(secondAdd).toHaveLength(0)
+    expect(active.filter(({ version }) => normalizeTrackableName(version.name) === 'acne severity')).toHaveLength(1)
+  })
+
+  it('does not modify legacy duplicate records while enforcing future names', async () => {
+    const { engine, repository } = setup()
+    const original = await engine.createTrackable({ ...customDraft, name: 'Legacy Name' })
+    await repository.save('trackables', { ...original.trackable, id: 'legacy-duplicate', revision: 1 })
+    await repository.save('trackableVersions', { ...original.version, id: 'legacy-duplicate:v1', trackableId: 'legacy-duplicate', name: ' legacy   name ', revision: 1 })
+    await expect(engine.createTrackable({ ...customDraft, name: 'LEGACY NAME' })).rejects.toBeInstanceOf(TrackableNameConflictError)
+    expect((await engine.getLibrary()).active.map(({ trackable }) => trackable.id).sort()).toEqual(['legacy-duplicate', original.trackable.id].sort())
   })
 })

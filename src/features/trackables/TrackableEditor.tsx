@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, type FormEvent } from 'react'
 import type { DataRole, EventTimingMode, InputType, ObservationAnswer, ValueDirection } from '../../domain/models/index.ts'
-import { TrackableValidationError, type TrackableDetails, type TrackableDraft, type TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
+import { TrackableNameConflictError, TrackableValidationError, type TrackableDetails, type TrackableDraft, type TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
 import { builtInIcons, iconGlyph } from '../../presets/iconLibrary.ts'
 import { trackableEngine } from './trackableEngine.ts'
 import { inputTypes } from './trackableUi.ts'
@@ -85,11 +85,12 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
   const [iconMode, setIconMode] = useState<'library' | 'emoji'>(() => draft.icon?.type === 'emoji' ? 'emoji' : 'library')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [archivedNameConflict, setArchivedNameConflict] = useState<TrackableNameConflictError | null>(null)
   const isChoice = draft.inputType === 'single_choice' || draft.inputType === 'multi_select'
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setArchivedNameConflict(null)
     const submittedOptions = isChoice ? draft.options ?? [] : []
     const completeDraft: TrackableDraft = {
       ...draft,
@@ -102,7 +103,19 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
       else await trackableEngine.createTrackable(completeDraft)
       onSaved()
     } catch (caught) {
+      if (caught instanceof TrackableNameConflictError && caught.archived && !details) setArchivedNameConflict(caught)
       setError(caught instanceof TrackableValidationError ? caught.issues.join(' ') : caught instanceof Error ? caught.message : 'Could not save this Trackable.')
+    } finally { setBusy(false) }
+  }
+
+  async function restoreArchivedConflict() {
+    if (!archivedNameConflict) return
+    setBusy(true); setError('')
+    try {
+      await trackableEngine.setTrackableActive(archivedNameConflict.existingTrackableId, true)
+      onSaved()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not restore this Trackable.')
     } finally { setBusy(false) }
   }
 
@@ -157,6 +170,7 @@ export function TrackableEditor({ details, library, onCancel, onSaved }: { detai
     </div></details>
     {details && <p className="version-note">Changing what an answer means creates a new version. Old records keep their original meaning.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
+    {archivedNameConflict ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void restoreArchivedConflict()}>Restore {archivedNameConflict.existingName}</button> : null}
     <div className="editor-actions"><button className="primary-button" disabled={busy}>{busy ? 'Saving…' : details ? 'Save Changes' : 'Create Trackable'}</button><button className="secondary-button" type="button" onClick={onCancel}>Cancel</button></div>
   </form>
 }

@@ -87,6 +87,29 @@ export class TrackableValidationError extends Error {
   }
 }
 
+/** A stable comparison key for preventing visually equivalent Trackable names. */
+export function normalizeTrackableName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+}
+
+export class TrackableNameConflictError extends TrackableValidationError {
+  readonly existingTrackableId: string
+  readonly existingName: string
+  readonly categoryName: string
+  readonly archived: boolean
+
+  constructor({ existingTrackableId, existingName, categoryName, archived }: { existingTrackableId: string; existingName: string; categoryName: string; archived: boolean }) {
+    super([archived
+      ? `${existingName} already exists in Archived. Restore it instead?`
+      : `A Trackable named ${existingName} already exists in ${categoryName}.`])
+    this.name = 'TrackableNameConflictError'
+    this.existingTrackableId = existingTrackableId
+    this.existingName = existingName
+    this.categoryName = categoryName
+    this.archived = archived
+  }
+}
+
 function normalizeTags(tags: readonly string[] | undefined): readonly string[] {
   return [...new Set((tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
 }
@@ -170,6 +193,7 @@ function versionDefinition(draft: TrackableDraft): string {
 
 export class TrackableEngine {
   private initialization: Promise<void> | null = null
+  private trackableWrites: Promise<void> = Promise.resolve()
   private readonly repository: DataRepository
   private readonly now: () => Date
   private readonly createId: () => string
@@ -289,16 +313,13 @@ export class TrackableEngine {
   async createFromPreset(presetId: string): Promise<TrackableDetails> {
     const item = getPresetById(presetId)
     if (!item) throw new TrackableValidationError(['Ready-made Trackable was not found.'])
-    const library = await this.getLibrary()
-    const matchesPreset = ({ trackable, version }: TrackableDetails) =>
-      trackable.categoryId === item.categoryId
-      && version.name.toLocaleLowerCase() === item.name.toLocaleLowerCase()
-      && version.inputType === item.inputType
-    if (library.active.some(matchesPreset)) throw new TrackableValidationError([`${item.name} is already in your active Trackables.`])
-    const archived = library.archived.find(matchesPreset)
-    if (archived) {
-      await this.setTrackableActive(archived.trackable.id, true)
-      return this.getDetails(archived.trackable.id)
+    const conflict = await this.findNameConflict(item.name)
+    if (conflict) {
+      if (conflict.archived) {
+        await this.setTrackableActive(conflict.existingTrackableId, true)
+        return this.getDetails(conflict.existingTrackableId)
+      }
+      throw conflict
     }
     const category = await this.requireCategory(item.categoryId)
     return this.createTrackable({ ...this.presetDraft(item), icon: item.icon ?? category.icon })
@@ -308,11 +329,8 @@ export class TrackableEngine {
     const item = getPresetById(presetId)
     if (!item) return false
     const { active } = await this.getLibrary()
-    return active.some(({ trackable, version }) =>
-      trackable.categoryId === item.categoryId
-      && version.name.toLocaleLowerCase() === item.name.toLocaleLowerCase()
-      && version.inputType === item.inputType,
-    )
+    const normalizedName = normalizeTrackableName(item.name)
+    return active.some(({ version }) => normalizeTrackableName(version.name) === normalizedName)
   }
 
   async createFromPack(packId: string): Promise<readonly TrackableDetails[]> {
@@ -333,8 +351,13 @@ export class TrackableEngine {
   }
 
   async createTrackable(draft: TrackableDraft): Promise<TrackableDetails> {
+    return this.withTrackableWrite(() => this.createTrackableInternal(draft))
+  }
+
+  private async createTrackableInternal(draft: TrackableDraft): Promise<TrackableDetails> {
     await this.initialize()
     validateDraft(draft)
+    await this.assertUniqueName(draft.name)
     await this.requireCategory(draft.categoryId)
     const timestamp = this.timestamp()
     const trackableId = this.createId()
@@ -352,7 +375,12 @@ export class TrackableEngine {
   }
 
   async updateTrackable(id: string, draft: TrackableDraft): Promise<TrackableDetails> {
+    return this.withTrackableWrite(() => this.updateTrackableInternal(id, draft))
+  }
+
+  private async updateTrackableInternal(id: string, draft: TrackableDraft): Promise<TrackableDetails> {
     validateDraft(draft)
+    await this.assertUniqueName(draft.name, id)
     await this.requireCategory(draft.categoryId)
     const current = await this.getDetails(id)
     const currentDraft: TrackableDraft = {
@@ -390,7 +418,12 @@ export class TrackableEngine {
   }
 
   async setTrackableActive(id: string, active: boolean): Promise<void> {
+    return this.withTrackableWrite(() => this.setTrackableActiveInternal(id, active))
+  }
+
+  private async setTrackableActiveInternal(id: string, active: boolean): Promise<void> {
     const details = await this.getDetails(id)
+    if (active) await this.assertUniqueName(details.version.name, id)
     const timestamp = this.timestamp()
     await this.repository.save('trackables', { ...details.trackable, active, archivedAt: active ? null : timestamp, updatedAt: timestamp, revision: details.trackable.revision + 1 })
   }
@@ -448,6 +481,39 @@ export class TrackableEngine {
       const optionId = draft.optionId ?? this.createId()
       return { id: `${optionId}:v${version}`, optionId, trackableId, trackableVersion: version, storedValue: optionStoredValue(draft.label), label: draft.label.trim(), icon: draft.icon,
         sortOrder, active: true, createdAt: timestamp, updatedAt: timestamp, deletedAt: null, revision: 1 }
+    })
+  }
+
+  private async assertUniqueName(name: string, excludedTrackableId?: string): Promise<void> {
+    const conflict = await this.findNameConflict(name, excludedTrackableId)
+    if (conflict) throw conflict
+  }
+
+  private async withTrackableWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.trackableWrites
+    let release: () => void = () => undefined
+    this.trackableWrites = new Promise((resolve) => { release = resolve })
+    await previous
+    try {
+      return await operation()
+    } finally {
+      release()
+    }
+  }
+
+  private async findNameConflict(name: string, excludedTrackableId?: string): Promise<TrackableNameConflictError | null> {
+    const library = await this.getLibrary()
+    const normalizedName = normalizeTrackableName(name)
+    const categories = new Map(library.categories.map((category) => [category.id, category.name]))
+    const match = [...library.active, ...library.archived].find(({ trackable, version }) =>
+      trackable.id !== excludedTrackableId && normalizeTrackableName(version.name) === normalizedName,
+    )
+    if (!match) return null
+    return new TrackableNameConflictError({
+      existingTrackableId: match.trackable.id,
+      existingName: match.version.name,
+      categoryName: categories.get(match.trackable.categoryId) ?? 'another category',
+      archived: !match.trackable.active,
     })
   }
 

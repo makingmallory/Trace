@@ -57,11 +57,11 @@ describe('Trackable preset browsing', () => {
     expect(filterOwnedTrackableGroups(active, categories, '', 'category.skin').map((group) => group.category.id)).toEqual(['category.skin'])
   })
 
-  it('identifies an active ready-made Trackable using the conservative matching rule', () => {
+  it('identifies an active ready-made Trackable by its canonical global name', () => {
     const preset = getPresetById('preset.skin.acne-severity')!
     const active = [{
-      trackable: { id: 'owned-id', categoryId: preset.categoryId, active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: preset.dataRole, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
-      version: { id: 'version-id', trackableId: 'owned-id', version: 1, name: preset.name, inputType: preset.inputType, scaleMin: 1, scaleMax: 5, scaleStep: 1, valueDirection: preset.valueDirection, configuration: {}, retiredAt: null, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
+      trackable: { id: 'owned-id', categoryId: 'category.mood-mental', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: preset.dataRole, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
+      version: { id: 'version-id', trackableId: 'owned-id', version: 1, name: '  ACNE   severity ', inputType: 'text', valueDirection: preset.valueDirection, configuration: {}, retiredAt: null, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
       options: [],
     }] satisfies readonly TrackableDetails[]
     expect(isPresetAlreadyActive(preset, active)).toBe(true)
