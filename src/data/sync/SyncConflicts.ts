@@ -14,6 +14,53 @@ function sameJson(left: JsonValue | undefined, right: JsonValue | undefined): bo
   return stableStringify(left) === stableStringify(right)
 }
 
+/**
+ * These fields are optional presentation/configuration details. Older records
+ * omit them while newer records may serialize them as null; neither form
+ * changes what the person sees or how the record behaves.
+ *
+ * Intentionally do not normalize ObservationAnswer states here: skipped,
+ * unanswered, unavailable, and unknown are distinct recorded meanings.
+ */
+const nullEquivalentOptionalFields: Readonly<Partial<Record<SyncedCollection, readonly string[]>>> = {
+  categories: ['icon', 'color'],
+  trackables: ['archivedAt', 'quickLogTimingMode', 'icon', 'colorRef', 'reminder'],
+  trackableVersions: ['description', 'scaleMin', 'scaleMax', 'scaleStep', 'unit'],
+  trackableOptions: ['icon', 'colorRef'],
+  routines: ['icon'],
+  routineItems: ['section', 'weekdays', 'conditionalRule'],
+  eventDefinitions: ['description', 'icon', 'colorRef'],
+  eventFields: ['conditionalRule'],
+  trackableFields: ['ownerTrackableVersion', 'conditionalRule'],
+  logRecords: ['routineId', 'eventDefinitionId', 'trackableId', 'trackableVersion', 'eventTimingKind', 'endLocalDate', 'endTimePrecision', 'endTime', 'endTimeOfDay', 'timezone'],
+  observations: ['customChoiceValue', 'trendValue'],
+  trackableDailyAssertions: ['sourceRoutineId'],
+  eventDailyAssertions: ['sourceRoutineId'],
+  relationshipAssessments: ['trackableId'],
+  settings: ['dailyCheckInReminder'],
+}
+
+/** Stable option IDs carry answer meaning; this derived display-normalization code does not. */
+const nonUserFacingFields: Readonly<Partial<Record<SyncedCollection, readonly string[]>>> = { trackableOptions: ['storedValue'] }
+
+function normalizedMeaningfulPayload(record: SyncRecord): Record<string, JsonValue> {
+  const optional = new Set(nullEquivalentOptionalFields[record.entityType] ?? [])
+  const ignored = new Set(nonUserFacingFields[record.entityType] ?? [])
+  const normalized: Record<string, JsonValue> = {}
+  for (const [field, value] of Object.entries(record.payload)) {
+    if (ignored.has(field) || optional.has(field) && value === null) continue
+    normalized[field] = value
+  }
+  return normalized
+}
+
+/** The fields that would make a user see a different record or answer. */
+export function meaningfulPayloadDifferences(local: SyncRecord, remote: SyncRecord): readonly string[] {
+  const left = normalizedMeaningfulPayload(local)
+  const right = normalizedMeaningfulPayload(remote)
+  return [...new Set([...Object.keys(left), ...Object.keys(right)])].filter((field) => !sameJson(left[field], right[field]))
+}
+
 function changedPayloadFields(base: SyncRecord, candidate: SyncRecord): Set<string> {
   const fields = new Set([...Object.keys(base.payload), ...Object.keys(candidate.payload)])
   return new Set([...fields].filter((field) => !sameJson(base.payload[field], candidate.payload[field])))
@@ -65,11 +112,16 @@ export function normalizeSyncConflicts(metadata: SyncMetadata): Record<string, S
 export function trySafeConflictResolution(local: SyncRecord, remote: SyncRecord, base: SyncRecord | undefined, now: string): SafeConflictResolution | null {
   const state = remoteState(remote)
   if (fingerprint(local) === fingerprint(remote)) return { entity: deserializeEntity(remote), remoteState: state, reason: 'identical' }
-  if (local.entityType !== remote.entityType || local.id !== remote.id || local.createdAt !== remote.createdAt) return null
+  if (local.entityType !== remote.entityType || local.id !== remote.id) return null
+  // Creation/update timestamps, revisions, and sync bookkeeping are not user
+  // data. This also clears stale identity conflicts whose snapshots describe
+  // the same visible record.
+  if (meaningfulPayloadDifferences(local, remote).length === 0 && Boolean(local.deletedAt) === Boolean(remote.deletedAt)) {
+    return { entity: deserializeEntity(remote), remoteState: state, reason: 'metadata-only' }
+  }
+  if (local.createdAt !== remote.createdAt) return null
   if (Boolean(local.deletedAt) !== Boolean(remote.deletedAt)) return null
 
-  const samePayload = sameJson(local.payload, remote.payload)
-  if (samePayload) return { entity: deserializeEntity(remote), remoteState: state, reason: 'metadata-only' }
   if (local.deletedAt !== remote.deletedAt) return null
   if (!base || base.entityType !== local.entityType || base.id !== local.id || base.deletedAt !== local.deletedAt) return null
 

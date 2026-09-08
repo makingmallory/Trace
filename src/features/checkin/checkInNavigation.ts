@@ -4,16 +4,30 @@ export function historyReturnPath(localDate: string): string {
   return validLocalDate.test(localDate) ? `/history?date=${localDate}` : '/history'
 }
 
-function withReturnTo(path: string, returnTo?: string): string {
-  return returnTo ? `${path}?returnTo=${encodeURIComponent(returnTo)}` : path
+export type CheckInFocusTarget = `trackable:${string}` | `field:${string}`
+
+function validFocusTarget(value: string | null | undefined): value is CheckInFocusTarget {
+  return Boolean(value && /^(?:trackable|field):[^\s:]+$/.test(value))
+}
+
+function withRouteContext(path: string, returnTo?: string, focusTarget?: CheckInFocusTarget): string {
+  const search = new URLSearchParams()
+  if (returnTo) search.set('returnTo', returnTo)
+  if (focusTarget) search.set('focus', focusTarget)
+  const query = search.toString()
+  return query ? `${path}?${query}` : path
 }
 
 export function checkInRouteForToday(returnTo?: string): string {
-  return withReturnTo('/check-in', returnTo)
+  return withRouteContext('/check-in', returnTo)
 }
 
-export function checkInRouteForDate(localDate: string, returnTo?: string): string {
-  return withReturnTo(`/history/check-in/${localDate}`, returnTo)
+export function checkInRouteForDate(localDate: string, returnTo?: string, focusTarget?: CheckInFocusTarget): string {
+  return withRouteContext(`/history/check-in/${localDate}`, returnTo, focusTarget)
+}
+
+export function resolveCheckInFocusTarget(value: string | null): CheckInFocusTarget | null {
+  return validFocusTarget(value) ? value : null
 }
 
 /** Only known in-app destinations are accepted as a Check-In return target. */

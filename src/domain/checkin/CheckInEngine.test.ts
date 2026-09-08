@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { InMemoryDataRepository } from '../../data/local/InMemoryDataRepository.ts'
 import type { Category, InputType, TrackableOption, TrackableRecordSemantics, TrackableVersion } from '../models/index.ts'
 import { CheckInEngine, isValidLocalDate, localDateFor, OccurrenceConflictError } from './CheckInEngine.ts'
-import { buildDayDetail, HistoryEngine } from '../history/HistoryEngine.ts'
+import { buildCalendarSummaries, buildDayDetail, calendarMetricOptions, HistoryEngine, searchHistory } from '../history/HistoryEngine.ts'
+import { EventEngine } from '../events/EventEngine.ts'
 
 const timestamp = '2026-08-10T21:00:00.000Z'
 
@@ -338,6 +339,21 @@ describe('CheckInEngine daily records', () => {
     await engine.complete(snapshot.record.id)
     expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'pilates' && !item.deletedAt)).toHaveLength(1)
     expect((await repository.getAll('logRecords')).filter((item) => item.trackableId === 'migraine' && !item.deletedAt)).toHaveLength(2)
+    let historyData = await new HistoryEngine(repository).load()
+    expect(searchHistory(historyData, 'migraine', '2026-08-10').results).toHaveLength(2)
+    expect(searchHistory(historyData, 'migraine', '2026-08-10').results.every((item) => item.kind === 'event')).toBe(true)
+    expect(calendarMetricOptions(historyData).filter((item) => item.name === 'Migraine')).toEqual([
+      { identity: 'event:migraine', name: 'Migraine', kind: 'Occurrence' },
+    ])
+    expect(buildCalendarSummaries(historyData, '2026-08-10').get('2026-08-10')?.eventCount).toBe(3)
+    const homeEvents = new EventEngine(repository, () => new Date(timestamp), () => 'unused')
+    expect((await homeEvents.getEventsForDate('2026-08-10')).filter((item) => item.definition.id === 'migraine')).toHaveLength(2)
+
+    const history = new HistoryEngine(repository, () => new Date(timestamp))
+    await history.softDelete('migraine-1')
+    historyData = await history.load()
+    expect(searchHistory(historyData, 'migraine', '2026-08-10').results).toHaveLength(1)
+    expect((await homeEvents.getEventsForDate('2026-08-10')).filter((item) => item.definition.id === 'migraine')).toHaveLength(1)
     await repository.save('logRecords', entry('pilates-entry-2', 'pilates'))
     const repeated = await engine.getOrCreateToday('2026-08-10', 'America/Chicago')
     expect(repeated.quickLogSummaries.pilates).toBe(2)

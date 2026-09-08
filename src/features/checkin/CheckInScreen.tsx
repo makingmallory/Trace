@@ -4,11 +4,12 @@ import { isValidLocalDate, localDateFor, OccurrenceConflictError, type CheckInSn
 import { checkInEngine } from './checkInEngine.ts'
 import { QuestionInput } from './QuestionInput.tsx'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
-import { checkInRouteForDate, checkInRouteForToday, completionDestination, historyReturnPath, resolveCheckInReturnTo } from './checkInNavigation.ts'
+import { checkInRouteForDate, checkInRouteForToday, completionDestination, historyReturnPath, resolveCheckInFocusTarget, resolveCheckInReturnTo } from './checkInNavigation.ts'
 import { evaluateConditionalRule } from '../../domain/checkin/conditionalRules.ts'
 import { effectiveCategoryColor } from '../../themes/categoryColors.ts'
 import { InlineBackHeader } from '../../components/InlineBackHeader.tsx'
 import { quickLogEditPath } from '../events/quickLogNavigation.ts'
+import { checkInFocusTargetInSnapshot } from './checkInFocus.ts'
 
 function displayDate(localDate: string): string {
   const date = new Date(`${localDate}T12:00:00`)
@@ -34,6 +35,7 @@ export function CheckInScreen() {
   const historical = selectedDate !== today
   const fallbackReturnTo = routeDate ? historyReturnPath(routeDate) : '/'
   const returnTo = resolveCheckInReturnTo(searchParams.get('returnTo'), fallbackReturnTo)
+  const focusTarget = resolveCheckInFocusTarget(searchParams.get('focus'))
   const [snapshot, setSnapshot] = useState<CheckInSnapshot | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -43,6 +45,7 @@ export function CheckInScreen() {
   const [savedMessage, setSavedMessage] = useState('')
   const messageTimer = useRef<number | undefined>(undefined)
   const dateInputRef = useRef<HTMLInputElement | null>(null)
+  const scrolledFocusKey = useRef<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -57,6 +60,21 @@ export function CheckInScreen() {
     return () => { active = false }
   }, [selectedDate])
   useEffect(() => () => window.clearTimeout(messageTimer.current), [])
+
+  useEffect(() => {
+    const resolvedTarget = snapshot ? checkInFocusTargetInSnapshot(snapshot, focusTarget) : null
+    if (!snapshot || !resolvedTarget) return
+    const key = `${snapshot.record.id}:${resolvedTarget}`
+    if (scrolledFocusKey.current === key) return
+    const frame = window.requestAnimationFrame(() => {
+      const element = [...document.querySelectorAll<HTMLElement>('[data-checkin-focus]')]
+        .find((candidate) => candidate.dataset.checkinFocus === resolvedTarget)
+      if (!element) return
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      scrolledFocusKey.current = key
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [snapshot, focusTarget])
 
   const groups = useMemo(() => {
     const result = new Map<string, { category: RoutineQuestion['category']; questions: RoutineQuestion[] }>()
@@ -166,7 +184,7 @@ export function CheckInScreen() {
         const fieldInputs = (question.fields ?? []).filter(({ field }) => {
           return evaluateConditionalRule(field.conditionalRule, snapshot.effectiveAnswers)
         })
-        return <article className="question-card" key={question.item.id}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><div><h3 id={`question-${question.item.id}`}>{question.version.name}</h3>{question.version.description ? <p>{question.version.description}</p> : null}{quickLogCount ? <p>{quickLogCount} logged today</p> : null}</div>{question.item.completionBehavior === 'expected' ? <small>Usual</small> : null}</div><QuestionInput question={question} observation={observation} selections={selections} prefill={snapshot.defaultAnswers[question.trackable.id]} disabled={saving || completionSaving} onSave={(answer) => void save(question.trackable.id, answer)} />{fieldInputs.length ? <div className="structured-fields">{fieldInputs.map((field) => { const fieldObservation = snapshot.observations.find((item) => item.trackableId === field.trackable.id); const fieldSelections = fieldObservation ? snapshot.selections.filter((item) => item.observationId === fieldObservation.id) : []; const fieldQuestion = { ...question, item: { ...question.item, id: `${question.item.id}-${field.field.id}` }, trackable: field.trackable, version: field.version, options: field.options, category: field.category }; return <div key={field.field.id}><h4 id={`question-${question.item.id}-${field.field.id}`}>{field.version.name}{field.field.required ? ' *' : ''}</h4><QuestionInput question={fieldQuestion} observation={fieldObservation} selections={fieldSelections} disabled={saving || completionSaving} onSave={(answer) => void save(field.trackable.id, answer)} /></div> })}</div> : null}</article>
+        return <article className="question-card" data-checkin-focus={`trackable:${question.trackable.id}`} key={question.item.id}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(question.trackable.icon)}</span><div><h3 id={`question-${question.item.id}`}>{question.version.name}</h3>{question.version.description ? <p>{question.version.description}</p> : null}{quickLogCount ? <p>{quickLogCount} logged today</p> : null}</div>{question.item.completionBehavior === 'expected' ? <small>Usual</small> : null}</div><QuestionInput question={question} observation={observation} selections={selections} prefill={snapshot.defaultAnswers[question.trackable.id]} disabled={saving || completionSaving} onSave={(answer) => void save(question.trackable.id, answer)} />{fieldInputs.length ? <div className="structured-fields">{fieldInputs.map((field) => { const fieldObservation = snapshot.observations.find((item) => item.trackableId === field.trackable.id); const fieldSelections = fieldObservation ? snapshot.selections.filter((item) => item.observationId === fieldObservation.id) : []; const fieldQuestion = { ...question, item: { ...question.item, id: `${question.item.id}-${field.field.id}` }, trackable: field.trackable, version: field.version, options: field.options, category: field.category }; return <div data-checkin-focus={`field:${field.field.id}`} key={field.field.id}><h4 id={`question-${question.item.id}-${field.field.id}`}>{field.version.name}{field.field.required ? ' *' : ''}</h4><QuestionInput question={fieldQuestion} observation={fieldObservation} selections={fieldSelections} disabled={saving || completionSaving} onSave={(answer) => void save(field.trackable.id, answer)} /></div> })}</div> : null}</article>
       })}</div></section>)}
       {snapshot.loggedToday.length ? <section className="checkin-category checkin-category--logged"><h2>Logged Today</h2><p className="screen__description">For review only—nothing else to answer.</p><div className="question-stack">{snapshot.loggedToday.map((item) => <Link className="question-card" key={item.trackable.id} to={quickLogEditPath(item.recordId, fromHistory ? historyReturnPath(selectedDate) : '/check-in')}><div className="question-card__heading"><span className="emoji-icon" aria-hidden="true">{iconGlyph(item.trackable.icon)}</span><div><h3>{item.version.name}</h3><p>{item.timing ? item.timing.replace(/\b\w/g, (letter) => letter.toUpperCase()) : `${item.count} ${item.count === 1 ? 'entry' : 'entries'}`}</p></div><span className="logged-today__chevron" aria-hidden="true">›</span></div></Link>)}</div></section> : null}
       {warning.length > 0 ? <div className="completion-warning" role="alert"><h2>Finish with unanswered questions?</h2><p>You left {warning.length} usual {warning.length === 1 ? 'question' : 'questions'} unanswered: {warning.join(', ')}.</p><p>That’s okay—unanswered stays unknown.</p><div><button type="button" className="secondary-button" onClick={() => setWarning([])}>Keep Checking In</button><button type="button" className="primary-button" onClick={() => void finish(true)}>Finish Anyway</button></div></div> : null}

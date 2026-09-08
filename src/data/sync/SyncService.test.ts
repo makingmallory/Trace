@@ -96,6 +96,33 @@ describe('SyncService production reconciliation', () => {
     expect(await second.getById('categories', 'category-1')).toMatchObject({ name: 'Remote name', sortOrder: 7 })
   })
 
+  it('clears timestamp-only concurrent copies without leaving a conflict count or Needs Sync state', async () => {
+    const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
+    await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()
+    await first.save('categories', category(2)); await second.save('categories', category(3))
+    await new SyncService(first, provider).sync()
+    const service = new SyncService(second, provider)
+    const result = await service.sync()
+    expect(result.conflicts).toHaveLength(0)
+    expect(await service.conflictSnapshots()).toHaveLength(0)
+    expect(Object.keys((await service.metadata()).unresolvedConflicts ?? {})).toHaveLength(0)
+  })
+
+  it('atomically clears an older stored conflict that is now meaningfully identical', async () => {
+    const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
+    await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()
+    await first.save('categories', category(2, 'Synced edit')); await second.save('categories', category(2, 'Local edit'))
+    await new SyncService(first, provider).sync()
+    const service = new SyncService(second, provider); await service.sync()
+    const metadata = await service.metadata()
+    const stored = metadata.unresolvedConflicts?.['categories:category-1']
+    expect(stored).toBeDefined()
+    if (!stored) throw new Error('Expected the conflict fixture to be stored.')
+    await second.save('syncMetadata', { ...metadata, unresolvedConflicts: { 'categories:category-1': { ...stored, kind: 'identity-collision', remote: { ...stored.remote, createdAt: '2026-08-09T00:00:00.000Z', payload: stored.local.payload } } } })
+    expect(await service.conflictSnapshots()).toHaveLength(0)
+    expect(Object.keys((await service.metadata()).unresolvedConflicts ?? {})).toHaveLength(0)
+  })
+
   it('resolves Keep Local by rebasing the local record for normal upload', async () => {
     const provider = new MemoryProvider(); const first = new InMemoryDataRepository(); const second = new InMemoryDataRepository()
     await first.save('categories', category()); await new SyncService(first, provider).sync(); await new SyncService(second, provider).sync()

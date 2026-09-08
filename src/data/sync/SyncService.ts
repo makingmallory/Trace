@@ -110,7 +110,47 @@ export class SyncService {
   }
 
   async conflictSnapshots() {
+    await this.resolveStoredSafeConflicts()
     return Object.values(normalizeSyncConflicts(await this.metadata()))
+  }
+
+  private async resolveStoredSafeConflicts(): Promise<void> {
+    let changed = false
+    while (true) {
+      const metadata = await this.metadata()
+      const conflicts = normalizeSyncConflicts(metadata)
+      let resolved = false
+      for (const [conflictId, conflict] of Object.entries(conflicts)) {
+        const local = parseConflictRecord(conflict.local)
+        const remote = parseConflictRecord(conflict.remote)
+        const currentLocal = await this.repository.getById(local.entityType, local.id)
+        if (!currentLocal) continue
+        const currentRecord = serializeEntity(local.entityType, currentLocal as never, local.baseRemoteRevision)
+        const safe = trySafeConflictResolution(currentRecord, remote, conflict.base ? parseConflictRecord(conflict.base) : undefined, this.now().toISOString())
+        if (!safe) continue
+
+        delete conflicts[conflictId]
+        const states = { ...metadata.recordStates, [conflictId]: safe.remoteState }
+        const pendingChangeCount = await this.countPendingWithStates(states, { collection: local.entityType, entity: safe.entity })
+        const remaining = Object.keys(conflicts).length
+        const nextMetadata: SyncMetadata = {
+          ...metadata,
+          recordStates: states,
+          unresolvedConflicts: conflicts,
+          pendingChangeCount,
+          lastError: remaining ? `${remaining} record conflict${remaining === 1 ? '' : 's'} need attention.` : null,
+        }
+        await this.repository.saveTransaction([
+          { collection: local.entityType, entities: [safe.entity] } as RepositoryWrite,
+          { collection: 'syncMetadata', entities: [nextMetadata] },
+        ])
+        changed = true
+        resolved = true
+        break
+      }
+      if (!resolved) break
+    }
+    if (changed) publishSyncStatusChange()
   }
 
   async resolveConflict(conflictId: string, resolution: SyncConflictResolution): Promise<void> {

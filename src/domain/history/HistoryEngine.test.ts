@@ -102,6 +102,7 @@ describe('History calendar and detail', () => {
     const answers = buildDayDetail(fixture(), '2026-08-10').checkIn!.groups.flatMap((group) => group.answers)
     expect(answers.find((item) => item.name === 'Mood')?.value).toBe('0')
     expect(answers.find((item) => item.name === 'Acne')?.value).toBe('No')
+    expect(answers.find((item) => item.name === 'Mood')?.focusTarget).toBe('trackable:mood')
   })
 
   it('preserves routine category and question order in historical detail', () => {
@@ -324,19 +325,51 @@ describe('History search and metric projection', () => {
 
   it('keeps duplicate Trackable and Event names isolated by typed stable identity', () => {
     const base = fixture()
+    const migraineDailyValue: Observation = { id: 'migraine-daily-value', logRecordId: 'routine-1', trackableId: 'migraine-trackable', trackableVersion: 1, answer: { state: 'answered', value: { kind: 'scale', value: 3 } }, ...sync }
     const data: HistoryData = {
       ...base,
+      observations: [...base.observations, migraineDailyValue],
       trackables: [...base.trackables, { id: 'migraine-trackable', categoryId: 'health', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'symptom', ...sync }],
       trackableVersions: [...base.trackableVersions, { id: 'migraine-trackable-v1', trackableId: 'migraine-trackable', version: 1, name: 'Migraine', inputType: 'scale', scaleMin: 0, scaleMax: 5, scaleStep: 1, valueDirection: 'worse', configuration: {}, retiredAt: null, ...sync }],
     }
     expect(projectCalendarMetric(data, 'event:migraine', '2026-08-11').get('2026-08-10')?.display).toBe('2 entries')
-    expect(projectCalendarMetric(data, 'trackable:migraine-trackable', '2026-08-11').size).toBe(0)
+    expect(projectCalendarMetric(data, 'trackable:migraine-trackable', '2026-08-11').get('2026-08-10')?.display).toBe('3')
     expect(projectCalendarMetric(data, 'event:travel', '2026-08-11').get('2026-08-02')?.display).toBe('1 entry')
     expect(projectCalendarMetric(data, 'event:migraine', '2026-08-11').get('2026-08-10')?.display).toBe('2 entries')
     expect(calendarMetricOptions(data).filter((option) => option.name === 'Migraine')).toEqual([
       { identity: 'trackable:migraine-trackable', name: 'Migraine', kind: 'Daily Value' },
       { identity: 'event:migraine', name: 'Migraine', kind: 'Occurrence' },
     ])
+  })
+
+  it('classifies a routine occurrence from its canonical Quick Log without a false Daily Value', () => {
+    const base = fixture()
+    const occurrence = { id: 'migraine-trackable', categoryId: 'health', active: true, archivedAt: null, currentVersion: 1, tags: [], dataRole: 'symptom' as const, recordSemantics: 'occurrence' as const, quickLogEnabled: true, ...sync }
+    const version = { id: 'migraine-trackable-v1', trackableId: occurrence.id, version: 1, name: 'Migraine', inputType: 'boolean' as const, valueDirection: 'worse' as const, configuration: {}, retiredAt: null, ...sync }
+    const quickLog = record('migraine-quick-log', '2026-08-10', 'event', { recordKind: 'quick_log', trackableId: occurrence.id, trackableVersion: 1, eventTimingKind: 'point' })
+    const routineItem = { id: 'item-migraine', routineId: 'nightly', target: { kind: 'trackable' as const, trackableId: occurrence.id }, sortOrder: 3, enabled: true, frequency: 'every_day' as const, completionBehavior: 'optional' as const, trendTrackingMode: 'none' as const, eventReminderBehavior: 'never' as const, ...sync }
+    // Simulates a legacy/external phantom parent observation. It must not become a second logical record.
+    const phantom: Observation = { id: 'phantom-migraine-daily-value', logRecordId: 'routine-1', trackableId: occurrence.id, trackableVersion: 1, answer: { state: 'answered', value: { kind: 'boolean', value: true } }, ...sync }
+    const data: HistoryData = {
+      ...base,
+      eventDefinitions: [],
+      logRecords: [base.logRecords[0], quickLog],
+      observations: [...base.observations, phantom],
+      routineItems: [...base.routineItems, routineItem],
+      trackables: [...base.trackables, occurrence],
+      trackableVersions: [...base.trackableVersions, version],
+    }
+
+    expect(data.logRecords.filter((item) => item.trackableId === occurrence.id)).toHaveLength(1)
+    expect(searchHistory(data, 'migraine', '2026-08-11').results).toEqual([
+      expect.objectContaining({ recordId: quickLog.id, kind: 'event', identity: 'Migraine' }),
+    ])
+    expect(buildDayDetail(data, '2026-08-10').checkIn?.groups.flatMap((group) => group.answers).some((answer) => answer.name === 'Migraine')).toBe(false)
+    expect(calendarMetricOptions(data).filter((option) => option.name === 'Migraine')).toEqual([
+      { identity: `event:${occurrence.id}`, name: 'Migraine', kind: 'Occurrence' },
+    ])
+    expect(buildCalendarSummaries(data).get('2026-08-10')).toMatchObject({ eventCount: 1, activityCategoryIds: ['health'] })
+    expect(projectEventCalendar(data, occurrence.id, '2026-08-11').get('2026-08-10')?.display).toBe('1 entry')
   })
 
   it('normalizes Event heatmaps across the observed range without capping high frequencies', () => {

@@ -34,6 +34,8 @@ export interface CalendarDaySummary {
 
 export interface HistoryAnswer {
   observationId: string
+  /** Stable Check-In element target; never derived from the editable display label. */
+  focusTarget: `trackable:${string}` | `field:${string}`
   name: string
   value: string
   state: Observation['answer']['state']
@@ -259,7 +261,7 @@ function answerDetail(data: HistoryData, observation: Observation): HistoryAnswe
   const version = data.trackableVersions.find((item) => item.trackableId === observation.trackableId && item.version === observation.trackableVersion)
   if (!version) return null
   const trackable = data.trackables.find((item) => item.id === observation.trackableId)
-  return { observationId: observation.id, name: version.name, value: formatHistoryAnswer(data, observation), state: observation.answer.state, trendValue: observation.trendValue, icon: trackable?.icon }
+  return { observationId: observation.id, focusTarget: `trackable:${observation.trackableId}`, name: version.name, value: formatHistoryAnswer(data, observation), state: observation.answer.state, trendValue: observation.trendValue, icon: trackable?.icon }
 }
 
 function activeRecords(data: HistoryData): readonly LogRecord[] { return data.logRecords.filter((record) => !record.deletedAt) }
@@ -320,12 +322,13 @@ export function buildDayDetail(data: HistoryData, localDate: string, today = cur
     const grouped = new Map<string, { categoryId?: string; categoryIcon?: IconReference; answers: HistoryAnswer[] }>()
     const orderedItems = routineItemsForRecord(data, routineRecord)
     const itemOrder = new Map(orderedItems.flatMap((item, index) => item.target.kind === 'trackable' ? [[item.target.trackableId, index] as const] : []))
-    const observations = data.observations.filter((item) => item.logRecordId === routineRecord.id && !item.deletedAt).sort((a, b) => (itemOrder.get(a.trackableId) ?? Number.MAX_SAFE_INTEGER) - (itemOrder.get(b.trackableId) ?? Number.MAX_SAFE_INTEGER) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    const observations = data.observations.filter((item) => item.logRecordId === routineRecord.id && !item.deletedAt && isCanonicalRoutineObservation(data, routineRecord, item)).sort((a, b) => (itemOrder.get(a.trackableId) ?? Number.MAX_SAFE_INTEGER) - (itemOrder.get(b.trackableId) ?? Number.MAX_SAFE_INTEGER) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
     for (const observation of observations) {
       let detail = answerDetail(data, observation)
       let trackable = data.trackables.find((item) => item.id === observation.trackableId)
       const structuredField = (data.trackableFields ?? []).find((field) => field.fieldTrackableId === observation.trackableId && field.enabled && !field.deletedAt && orderedItems.some((item) => item.target.kind === 'trackable' && item.target.trackableId === field.ownerTrackableId))
       if (detail && structuredField) {
+        detail = { ...detail, focusTarget: `field:${structuredField.id}` }
         const owner = data.trackables.find((item) => item.id === structuredField.ownerTrackableId)
         const ownerVersion = owner ? data.trackableVersions.find((item) => item.trackableId === owner.id && item.version === (structuredField.ownerTrackableVersion ?? owner.currentVersion)) : undefined
         if (ownerVersion) detail = { ...detail, name: `${ownerVersion.name} · ${detail.name}` }
@@ -404,6 +407,18 @@ function additionalFieldOwner(data: HistoryData, record: LogRecord, observation:
   return field && trackable ? { field, trackable } : undefined
 }
 
+/**
+ * Occurrence routine questions are projections of Quick Logs/assertions, not independent
+ * observations. Old or externally supplied parent observations must therefore never be
+ * presented as a competing Daily Value. Occurrence Trackables remain valid as structured
+ * fields because those observations describe a separate detail on their owning record.
+ */
+function isCanonicalRoutineObservation(data: HistoryData, record: LogRecord, observation: Observation): boolean {
+  if (record.recordKind !== 'routine' || additionalFieldOwner(data, record, observation)) return true
+  const trackable = data.trackables.find((item) => item.id === observation.trackableId)
+  return !trackable || !isOccurrenceTrackable(trackable)
+}
+
 function searchValueForObservation(data: HistoryData, record: LogRecord, observation: Observation): HistorySearchValue | null {
   const version = data.trackableVersions.find((item) => item.trackableId === observation.trackableId && item.version === observation.trackableVersion && !item.deletedAt)
   if (!version) return null
@@ -427,7 +442,7 @@ function searchValueForObservation(data: HistoryData, record: LogRecord, observa
 /** Builds only user-facing search terms; stable IDs and raw serialized payloads are intentionally excluded. */
 export function buildHistorySearchIndex(data: HistoryData): readonly HistorySearchIndexEntry[] {
   return activeRecords(data).flatMap((record): HistorySearchIndexEntry[] => {
-    const observations = data.observations.filter((item) => item.logRecordId === record.id && !item.deletedAt)
+    const observations = data.observations.filter((item) => item.logRecordId === record.id && !item.deletedAt && isCanonicalRoutineObservation(data, record, item))
     const values = observations.flatMap((observation) => searchValueForObservation(data, record, observation) ?? [])
     const timing = isQuickLogRecord(record) ? formatEventTiming(record) : ''
     let identity: string
@@ -556,9 +571,20 @@ export function eventMetricChoices(data: HistoryData): readonly EventMetricChoic
 }
 
 export function calendarMetricOptions(data: HistoryData): readonly CalendarMetricOption[] {
+  const records = new Map(activeRecords(data).map((record) => [record.id, record]))
+  const recordedDailyValueIds = new Set(data.observations.flatMap((observation) => {
+    const record = records.get(observation.logRecordId)
+    return record && !observation.deletedAt && observation.answer.state === 'answered'
+      && record.recordKind === 'routine' && isCanonicalRoutineObservation(data, record, observation)
+      ? [observation.trackableId]
+      : []
+  }))
+  const recordedOccurrenceIds = new Set([...records.values()].flatMap((record) => isQuickLogRecord(record)
+    ? [record.trackableId ?? record.eventDefinitionId].filter((id): id is string => Boolean(id))
+    : []))
   return [
-    ...metricChoices(data).filter((choice) => !isOccurrenceTrackable(data.trackables.find((item) => item.id === choice.trackableId)!)).map((choice): CalendarMetricOption => ({ identity: `trackable:${choice.trackableId}`, name: choice.name, kind: 'Daily Value' })),
-    ...eventMetricChoices(data).map((choice): CalendarMetricOption => ({ identity: `event:${choice.eventDefinitionId}`, name: choice.name, kind: 'Occurrence' })),
+    ...metricChoices(data).filter((choice) => recordedDailyValueIds.has(choice.trackableId) && !isOccurrenceTrackable(data.trackables.find((item) => item.id === choice.trackableId)!)).map((choice): CalendarMetricOption => ({ identity: `trackable:${choice.trackableId}`, name: choice.name, kind: 'Daily Value' })),
+    ...eventMetricChoices(data).filter((choice) => recordedOccurrenceIds.has(choice.eventDefinitionId)).map((choice): CalendarMetricOption => ({ identity: `event:${choice.eventDefinitionId}`, name: choice.name, kind: 'Occurrence' })),
   ].sort((a, b) => a.name.localeCompare(b.name) || a.kind.localeCompare(b.kind) || a.identity.localeCompare(b.identity))
 }
 
