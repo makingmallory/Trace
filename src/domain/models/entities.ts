@@ -236,6 +236,28 @@ export interface RelationshipAssessment extends SyncableEntity {
   recordedAt: ISODateTime
 }
 
+export type AnalysisMappingMeasurementType = 'nominal-single' | 'ordinal'
+
+export interface AnalysisValueMappingEntry {
+  /** Stable, schema-aware key such as `number:3` or `option:light-flow`. */
+  sourceValue: string
+  /** Stable key in the target Trackable version. */
+  mappedValue: string
+  /** Snapshot label retained for an auditable analysis-facing display. */
+  label?: string
+}
+
+/** Local-only analysis metadata. Raw observations and Trackable versions remain untouched. */
+export interface AnalysisValueMapping extends SyncableEntity {
+  trackableId: EntityId
+  sourceTrackableVersion: number
+  targetTrackableVersion: number
+  targetMeasurementType: AnalysisMappingMeasurementType
+  valueMappings: readonly AnalysisValueMappingEntry[]
+  /** Explicit canonical ordering; required whenever the target is ordinal. */
+  ordinalOrder?: readonly string[]
+}
+
 export interface Settings extends SyncableEntity {
   schemaVersion: number
   themeId: string

@@ -7,7 +7,7 @@ import type { TrackableDetails } from '../../domain/trackables/TrackableEngine.t
 import { getPresetById, presetPacks, trackablePresets } from '../../presets/trackablePresets.ts'
 import { AddTrackableScreen, BrowseSection, ManageTrackablesScreen, PackCard, PresetCard } from './TrackablesScreen.tsx'
 import { TrackableEditor } from './TrackableEditor.tsx'
-import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, isPresetAlreadyActive, packDisplayIcon, presetIcon } from './trackableUi.ts'
+import { filterOwnedTrackableGroups, filterOwnedTrackables, filterPresetGroups, groupAdditionalFieldCandidates, isPresetAlreadyActive, packDisplayIcon, presetIcon } from './trackableUi.ts'
 
 vi.mock('./trackableEngine.ts', () => ({ trackableEngine: {} }))
 
@@ -55,6 +55,13 @@ describe('Trackable preset browsing', () => {
     expect(filterOwnedTrackables(archived, categories, 'acne').map((item) => item.trackable.id)).toEqual(['old-acne'])
     expect(filterOwnedTrackables(active, categories, 'old')).toEqual([])
     expect(filterOwnedTrackableGroups(active, categories, '', 'category.skin').map((group) => group.category.id)).toEqual(['category.skin'])
+  })
+
+  it('groups and filters Additional Field candidates without changing the source selection data', () => {
+    const candidates = [owned('owner', 'Owner', 'category.skin'), owned('acne', 'Acne Location', 'category.skin'), owned('energy', 'Energy Level', 'category.mood-mental')]
+    const before = structuredClone(candidates)
+    expect(groupAdditionalFieldCandidates(candidates, categories, 'owner', 'energy').map((group) => [group.category.id, group.items.map((item) => item.trackable.id)])).toEqual([['category.mood-mental', ['energy']]])
+    expect(candidates).toEqual(before)
   })
 
   it('identifies an active ready-made Trackable by its canonical global name', () => {
@@ -137,18 +144,36 @@ describe('Trackable preset browsing', () => {
     expect(editMarkup).toContain('value="Acne Location"')
   })
 
-  it('shares the lighter tracking, answer configuration, and accordion structure across create and edit', () => {
+  it('shares the configuration-first sections across create and edit while history remains edit-only', () => {
     const library = { categories, active: [owned('acne', 'Acne Location', 'category.skin')], archived: [] }
     const createMarkup = renderToStaticMarkup(createElement(TrackableEditor, { library, onCancel: () => undefined, onSaved: () => undefined }))
     const editMarkup = renderToStaticMarkup(createElement(TrackableEditor, { details: library.active[0], library, onCancel: () => undefined, onSaved: () => undefined }))
     for (const markup of [createMarkup, editMarkup]) {
-      expect(markup).toContain('class="trackable-editor-section tracking-semantics"')
+      expect(markup).toContain('class="trackable-config-card basics-card"')
+      expect(markup).toContain('class="trackable-config-card tracking-card"')
+      expect(markup).toContain('class="trackable-config-card answer-config-card"')
       expect(markup).toContain('class="tracking-choice-list"')
-      expect(markup).toContain('<summary>Additional Fields')
-      expect(markup).toContain('<summary>Advanced Options</summary>')
-      expect(markup).toContain('class="form-row trackable-primary-selects"')
-      expect(markup).not.toContain('class="event-field-editor tracking-semantics"')
+      expect(markup).toContain('Additional Fields')
+      expect(markup).toContain('Advanced Options')
+      expect(markup).toContain('Find a field')
     }
-    expect(createMarkup).toContain('class="trackable-editor-section trackable-scale-settings"')
+    expect(createMarkup).not.toContain('Historical mappings')
+    expect(editMarkup).toContain('Historical mappings')
+    expect(createMarkup).toContain('class="trackable-scale-settings"')
+  })
+
+  it('renders choice options as stable structured rows instead of a line-based textarea', () => {
+    const choice = owned('severity', 'Severity', 'category.skin')
+    choice.version = { ...choice.version, inputType: 'single_choice', configuration: { analysisMeasurementType: 'ordinal', orderedOptionIds: ['low', 'high'] } }
+    choice.options = [
+      { id: 'low:v1', optionId: 'low', trackableId: 'severity', trackableVersion: 1, storedValue: 'low', label: 'Low', sortOrder: 0, active: true, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
+      { id: 'high:v1', optionId: 'high', trackableId: 'severity', trackableVersion: 1, storedValue: 'high', label: 'High', sortOrder: 1, active: true, createdAt: '', updatedAt: '', deletedAt: null, revision: 1 },
+    ]
+    const markup = renderToStaticMarkup(createElement(TrackableEditor, { details: choice, library: { categories, active: [choice], archived: [] }, onCancel: () => undefined, onSaved: () => undefined }))
+    expect(markup).toContain('class="choice-option-row"')
+    expect(markup).toContain('value="Low"')
+    expect(markup).toContain('+ Add option')
+    expect(markup).toContain('Ordered categories')
+    expect(markup).not.toContain('one per line')
   })
 })

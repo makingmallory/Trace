@@ -1,6 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, it } from 'vitest'
-import type { Category } from '../../domain/models/index.ts'
+import type { AnalysisValueMapping, Category } from '../../domain/models/index.ts'
 import { IndexedDbDataRepository } from './IndexedDbDataRepository.ts'
 
 describe('IndexedDbDataRepository', () => {
@@ -17,6 +17,18 @@ describe('IndexedDbDataRepository', () => {
 
     const reopened = new IndexedDbDataRepository(databaseName, factory)
     await expect(reopened.getById('categories', category.id)).resolves.toEqual(category)
+    reopened.close()
+  })
+
+  it('round-trips local-only analysis mappings through the version-5 store', async () => {
+    const factory = new IDBFactory()
+    const databaseName = 'trace-analysis-mapping-roundtrip-test'
+    const first = new IndexedDbDataRepository(databaseName, factory)
+    const mapping: AnalysisValueMapping = { id: 'mapping', ...({ createdAt: '2026-08-10T12:00:00.000Z', updatedAt: '2026-08-10T12:00:00.000Z', deletedAt: null, revision: 1 } as const), trackableId: 'volume', sourceTrackableVersion: 1, targetTrackableVersion: 2, targetMeasurementType: 'nominal-single', valueMappings: [{ sourceValue: 'number:1', mappedValue: 'option:low', label: 'Low' }] }
+    await first.save('analysisMappings', mapping)
+    first.close()
+    const reopened = new IndexedDbDataRepository(databaseName, factory)
+    await expect(reopened.getById('analysisMappings', mapping.id)).resolves.toEqual(mapping)
     reopened.close()
   })
 

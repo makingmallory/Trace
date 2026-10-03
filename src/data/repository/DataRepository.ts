@@ -1,5 +1,6 @@
 import type {
   Category,
+  AnalysisValueMapping,
   EventDailyAssertion,
   EventDefinition,
   EventField,
@@ -20,6 +21,7 @@ import type {
 } from '../../domain/models/index.ts'
 
 export interface RepositoryCollectionMap {
+  analysisMappings: AnalysisValueMapping
   categories: Category
   trackables: Trackable
   trackableVersions: TrackableVersion
@@ -50,6 +52,7 @@ export type RepositoryWrite = {
 }[RepositoryCollection]
 
 export const repositoryCollections: readonly RepositoryCollection[] = [
+  'analysisMappings',
   'categories',
   'trackables',
   'trackableVersions',

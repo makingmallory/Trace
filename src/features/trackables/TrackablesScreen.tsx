@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { CategoryDraft, TrackableDetails, TrackableLibrary } from '../../domain/trackables/TrackableEngine.ts'
 import { iconGlyph } from '../../presets/iconLibrary.ts'
 import { getPresetById, presetPacks, trackablePresets, type PresetPack, type TrackablePreset } from '../../presets/trackablePresets.ts'
@@ -193,12 +193,14 @@ export function CustomTrackableScreen() {
 
 export function EditTrackableScreen() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { trackableId = '' } = useParams()
   const { library, error } = useTrackableLibrary()
   const details = library?.active.find((item) => item.trackable.id === trackableId) ?? library?.archived.find((item) => item.trackable.id === trackableId)
   if (!library) return <Loading error={error} />
   if (!details) return <Page eyebrow="Edit Trackable" title="Trackable not found" description="It may have been removed or is unavailable."><Link className="primary-button button-link" to="/trackables">Return to Trackables</Link></Page>
-  return <Page eyebrow="Edit Trackable" title={details.version.name} description="Customize it without changing what old records meant."><section className="trackable-editor"><TrackableEditor details={details} library={library} onCancel={() => navigate('/trackables')} onSaved={() => navigate('/trackables')} /></section></Page>
+  const requestedSource = Number(searchParams.get('mapping'))
+  return <Page eyebrow="Edit Trackable" title={details.version.name} description="Customize it without changing what old records meant."><section className="trackable-editor"><TrackableEditor details={details} library={library} onCancel={() => navigate('/trackables')} onSaved={() => navigate('/trackables')} {...(Number.isInteger(requestedSource) ? { initialHistorySourceVersion: requestedSource } : {})} /></section></Page>
 }
 
 export function ManageTrackablesScreen() {

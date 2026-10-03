@@ -114,3 +114,13 @@ export function filterOwnedTrackableGroups(
     items: filtered.filter((item) => item.trackable.categoryId === category.id),
   })).filter(({ items }) => items.length > 0)
 }
+
+export function groupAdditionalFieldCandidates(trackables: readonly TrackableDetails[], categories: readonly Category[], ownerTrackableId: string | undefined, search: string): readonly TrackableGroup[] {
+  const query = search.trim().toLocaleLowerCase()
+  return categories.map((category) => ({
+    category,
+    items: trackables.filter((item) => item.trackable.id !== ownerTrackableId
+      && item.trackable.categoryId === category.id
+      && (!query || item.version.name.toLocaleLowerCase().includes(query))),
+  })).filter((group) => group.items.length > 0)
+}

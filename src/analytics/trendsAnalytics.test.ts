@@ -23,7 +23,7 @@ function observation(id: string, logRecordId: string, value: number, overrides: 
 }
 
 function data(overrides: Partial<TrendsData> = {}): TrendsData {
-  return { trackables: [trackable()], trackableVersions: [version()], trackableOptions: [], logRecords: [], observations: [], observationSelections: [], ...overrides }
+  return { analysisMappings: [], categories: [], trackables: [trackable()], trackableVersions: [version()], trackableOptions: [], trackableFields: [], trackableDailyAssertions: [], logRecords: [], observations: [], observationSelections: [], ...overrides }
 }
 
 describe('minimal trend analytics', () => {

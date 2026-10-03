@@ -17,7 +17,7 @@ export interface ColorTokens {
   success: string
   warning: string
   danger: string
-  chartSeries: readonly [string, string, string, string, string]
+  chartSeries: readonly [string, string, string, string, string, string, string, string]
   artworkWarm: string
   artworkWarmStrong: string
   artworkCool: string

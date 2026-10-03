@@ -106,7 +106,7 @@ describe('palette registry', () => {
     for (const palette of themePresets) for (const appearance of ['light', 'dark'] as const) {
       const variant = palette.variants[appearance]
       for (const token of required) expect(variant.colors[token], `${palette.name}.${appearance}.${token}`).toBeTruthy()
-      expect(variant.colors.chartSeries).toHaveLength(5)
+      expect(variant.colors.chartSeries).toHaveLength(8)
       expect(variant.colors.chartSeries.every(Boolean)).toBe(true)
       expect(variant.artworkFilter).toBeTruthy()
       expect(variant.shadows.card).toBeTruthy()
