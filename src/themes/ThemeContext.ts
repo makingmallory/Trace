@@ -1,8 +1,16 @@
 import { createContext, useContext } from 'react'
-import { fantasyTheme } from './fantasyTheme.ts'
-import type { ThemeDefinition } from './types.ts'
+import { defaultTheme, resolveTheme } from './palettes.ts'
+import type { AppearanceMode, ResolvedAppearance, ResolvedTheme } from './types.ts'
 
-export const ThemeContext = createContext<ThemeDefinition>(fantasyTheme)
+export interface ThemeContextValue {
+  theme: ResolvedTheme
+  appearanceMode: AppearanceMode
+  resolvedAppearance: ResolvedAppearance
+  setTheme(themeId: string): void
+  setAppearanceMode(mode: AppearanceMode): void
+}
+
+export const ThemeContext = createContext<ThemeContextValue>({ theme: resolveTheme(defaultTheme.id, 'light'), appearanceMode: 'light', resolvedAppearance: 'light', setTheme: () => undefined, setAppearanceMode: () => undefined })
 
 export function useTheme() {
   return useContext(ThemeContext)

@@ -6,7 +6,7 @@
   "scope": "./",
   "display": "standalone",
   "background_color": "#fffcfe",
-  "theme_color": "#8d4e9e",
+  "theme_color": "#fffcfe",
   "icons": [
     {
       "src": "./icons/trace-icon-192.png",

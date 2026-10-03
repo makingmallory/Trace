@@ -18,12 +18,29 @@ export interface ColorTokens {
   warning: string
   danger: string
   chartSeries: readonly [string, string, string, string, string]
+  artworkWarm: string
+  artworkWarmStrong: string
+  artworkCool: string
+  artworkCoolStrong: string
 }
 
-export interface ThemeDefinition {
+export type AppearanceMode = 'light' | 'dark' | 'system'
+export type ResolvedAppearance = Exclude<AppearanceMode, 'system'>
+
+export interface ThemeVariant {
+  colors: ColorTokens
+  artworkFilter: string
+  shadows: {
+    card: string
+    navigation: string
+    soft: string
+  }
+}
+
+export interface PaletteDefinition {
   id: string
   name: string
-  colors: ColorTokens
+  variants: Record<ResolvedAppearance, ThemeVariant>
   spacing: {
     xs: string
     sm: string
@@ -38,14 +55,15 @@ export interface ThemeDefinition {
     lg: string
     pill: string
   }
-  shadows: {
-    card: string
-    navigation: string
-  }
   motion: {
     fast: string
     standard: string
   }
+}
+
+export interface ResolvedTheme extends Omit<PaletteDefinition, 'variants'>, ThemeVariant {
+  appearance: ResolvedAppearance
+  colorScheme: ResolvedAppearance
 }
 
 export type ThemeStyle = CSSProperties & Record<`--${string}`, string>

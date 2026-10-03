@@ -13,6 +13,8 @@ import { shareTextFile } from '../../platform/nativeFiles.ts'
 import type { DailyReminderResult } from '../reminders/DailyReminderCoordinator.ts'
 import { createDailyReminderCoordinator } from '../reminders/reminderRuntime.ts'
 import { shouldShowReminderSaved } from '../reminders/reminderSaveFeedback.ts'
+import { useTheme } from '../../themes/ThemeContext.ts'
+import { AppearanceThemeSelector } from './AppearanceThemeSelector.tsx'
 
 type SetupMode = 'new' | 'existing' | null
 type RunState = 'idle' | 'connecting' | 'syncing' | 'success' | 'attention' | 'error'
@@ -22,6 +24,7 @@ function formatLastSync(value: string | null): string {
 }
 
 export function SettingsScreen() {
+  const { theme, appearanceMode, resolvedAppearance, setTheme, setAppearanceMode } = useTheme()
   const [connection, setConnection] = useState<SyncConnection | null>(() => syncConnectionStorage.load())
   const [setupMode, setSetupMode] = useState<SetupMode>(null)
   const [endpointUrl, setEndpointUrl] = useState('')
@@ -188,6 +191,7 @@ export function SettingsScreen() {
         {setupMode ? <form className="sync-setup" onSubmit={(event) => void connect(event)}><h3>{setupMode === 'new' ? 'Set Up Your Backup' : 'Connect an Existing Backup'}</h3><p>{setupMode === 'new' ? <>Create a Sheet, add Trace’s Apps Script, deploy it, then paste the connection URL here. The repository guide is <code>docs/google-sync-setup.md</code>.</> : 'Use the connection URL from the Apps Script attached to your existing Trace Sheet. Trace validates and safely merges both copies.'}</p><label htmlFor="sync-url">Apps Script connection URL</label><input id="sync-url" type="url" required value={endpointUrl} onChange={(event) => setEndpointUrl(event.target.value)} placeholder="https://script.google.com/macros/s/…/exec" autoComplete="off" spellCheck={false} /><small>This stays on this device and is never built into Trace.</small><div className="sync-actions"><button className="primary-button" type="submit" disabled={state === 'connecting'}>{state === 'connecting' ? 'Validating…' : setupMode === 'new' ? 'Connect Backup' : 'Validate and Merge'}</button><button className="secondary-button" type="button" onClick={() => setSetupMode(null)}>Cancel</button></div></form> : null}
         {message ? <p className={`sync-message sync-message--${state}`} role="status">{message}</p> : null}
       </section>
+      <AppearanceThemeSelector activeThemeId={theme.id} appearanceMode={appearanceMode} resolvedAppearance={resolvedAppearance} onSelectTheme={setTheme} onSelectAppearance={setAppearanceMode} />
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Export Trace Data</h2><p>Download a full-fidelity JSON snapshot. This does not change your ongoing Google Sheets connection.</p></div><button className="button-link" type="button" onClick={() => void exportBackup()}>Export JSON Backup</button></div>
       <div className="developer-card"><div><p className="developer-card__label">Portable Backup</p><h2>Restore Trace Data</h2><p>Restore a current backup or safely upgrade a pre-unification backup.</p></div><label className="button-link">Import JSON Backup<input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file) }} /></label></div>
       <div className="developer-card"><div><p className="developer-card__label">Tracking</p><h2>Trackables</h2><p>Manage Daily Value and Occurrence Trackables in one place.</p></div><Link className="button-link" to="/trackables/manage">Manage Trackables</Link></div>

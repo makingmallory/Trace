@@ -8,8 +8,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { isNativeAndroid, parseTraceDeepLink } from './nativeRuntime.ts'
 import { publishWidgetSnapshot } from './widgetSnapshot.ts'
 import { createDailyReminderCoordinator } from '../features/reminders/reminderRuntime.ts'
+import { useTheme } from '../themes/ThemeContext.ts'
+import { statusBarIntent } from '../themes/themePreference.ts'
 
 export function NativeAppCoordinator() {
+  const { theme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
   const pathname = useRef(location.pathname)
@@ -65,8 +68,6 @@ export function NativeAppCoordinator() {
     ]).then((listeners) => { if (active) handles.push(...listeners); else listeners.forEach((handle) => void handle.remove()) })
     void CapacitorApp.getLaunchUrl().then((result) => { if (result?.url) openUrl(result.url) })
     void StatusBar.setOverlaysWebView({ overlay: false })
-    void StatusBar.setStyle({ style: Style.Light })
-    void StatusBar.setBackgroundColor({ color: '#fffcfe' })
     void SplashScreen.hide()
     window.addEventListener('trace:data-changed', refreshNativeState)
     document.addEventListener('click', onExternalClick, true)
@@ -80,6 +81,13 @@ export function NativeAppCoordinator() {
       document.removeEventListener('click', onExternalClick, true)
     }
   }, [navigate])
+
+  useEffect(() => {
+    if (!isNativeAndroid()) return
+    const intent = statusBarIntent(theme)
+    void StatusBar.setStyle({ style: intent.iconStyle === 'light' ? Style.Light : Style.Dark })
+    void StatusBar.setBackgroundColor({ color: intent.backgroundColor })
+  }, [theme])
 
   return null
 }
