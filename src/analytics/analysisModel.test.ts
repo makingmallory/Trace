@@ -180,6 +180,16 @@ describe('typed analysis model', () => {
     expect(opportunity?.coverage).toEqual({ mapped: 0, total: 1, percent: 0 })
   })
 
+  it('still excludes an out-of-range historical ordinal scale value without a mapping', () => {
+    const data = emptyData({ trackables: [trackable('severity', 2)], trackableVersions: [version('severity', 'scale', { scaleMin: 1, scaleMax: 5 }), version('severity', 'scale', { id: 'severity:v2', version: 2, scaleMin: 4, scaleMax: 10 })],
+      logRecords: [record('old', '2026-08-10')], observations: [observation('old-answer', 'old', 'severity', { state: 'answered', value: { kind: 'scale', value: 2 } })],
+    })
+    const result = buildAnalysisTrack(data, analysisSeriesOptions(data)[0], 'all', '2026-08-11')
+    expect(result.compatibilityStatus).toBe('unmapped-historical')
+    expect(result.values).toEqual([])
+    expect(result.warnings).toMatchObject([{ code: 'unmapped-value', count: 1 }])
+  })
+
   it('keys mappings to the source version and restores raw version-aware behavior after deletion', () => {
     const active = mapping('volume', 1, 3, [{ sourceValue: 'number:1', mappedValue: 'option:low', label: 'Low' }])
     const data = emptyData({

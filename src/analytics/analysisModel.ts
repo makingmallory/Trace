@@ -57,6 +57,7 @@ export interface AnalysisWarning {
   code: 'missing-version' | 'incompatible-version' | 'incompatible-unit' | 'unmapped-value'
   message: string
   recordId?: string
+  count?: number
 }
 
 export type AnalysisCompatibilityStatus = 'fully-compatible' | 'partially-mapped' | 'unmapped-historical' | 'incompatible'
@@ -81,6 +82,7 @@ export interface AnalysisMappingOpportunity {
   sourceValues: readonly AnalysisMappingValueOption[]
   targetValues: readonly AnalysisMappingValueOption[]
   ordinalOrder?: readonly string[]
+  /** Multi-select without a user mapping counts uniquely observed options that resolve automatically. */
   coverage: { mapped: number; total: number; percent: number }
   mapping?: AnalysisValueMapping
 }
@@ -308,11 +310,44 @@ function compatibleType(current: AnalysisMeasurementType, historical: AnalysisMe
   return current === historical || (current === 'continuous' && historical === 'count') || (current === 'count' && historical === 'continuous')
 }
 
-function automaticallyCompatibleWithoutMapping(sourceType: AnalysisMeasurementType | null, targetType: AnalysisMeasurementType | null, observedKeys: readonly string[], targetValues: readonly AnalysisMappingValueOption[]): boolean {
+function normalizedOptionLabel(label: string): string {
+  return label.trim().normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase()
+}
+
+/** Resolve each selected option independently; never compare a multi-label combination as one value. */
+function resolveHistoricalChoices(data: TrendsData, source: TrackableVersion, target: TrackableVersion, value: AnalysisValue): { categories: readonly { id: string; label: string }[]; unresolved: readonly { id: string; label: string }[] } {
+  const sourceOptions = data.trackableOptions.filter((option) => option.trackableId === source.trackableId && option.trackableVersion === source.version && !option.deletedAt)
+  const targetOptions = data.trackableOptions.filter((option) => option.trackableId === target.trackableId && option.trackableVersion === target.version && !option.deletedAt)
+  const categories: { id: string; label: string }[] = []
+  const unresolved: { id: string; label: string }[] = []
+  for (const selected of value.categories ?? []) {
+    const sameId = targetOptions.filter((option) => option.optionId === selected.id)
+    let resolved = sameId.length === 1 ? sameId[0] : undefined
+    if (!resolved && sameId.length === 0 && !selected.id.startsWith('custom:')) {
+      const historical = sourceOptions.filter((option) => option.optionId === selected.id)
+      if (historical.length === 1) {
+        const label = normalizedOptionLabel(historical[0].label)
+        const sourceMatches = sourceOptions.filter((option) => normalizedOptionLabel(option.label) === label)
+        const targetMatches = targetOptions.filter((option) => normalizedOptionLabel(option.label) === label)
+        if (label && sourceMatches.length === 1 && targetMatches.length === 1) resolved = targetMatches[0]
+      }
+    }
+    if (resolved) {
+      if (!categories.some((category) => category.id === resolved.optionId)) categories.push({ id: resolved.optionId, label: resolved.label })
+    } else unresolved.push(selected)
+  }
+  return { categories, unresolved }
+}
+
+function automaticallyCompatibleWithoutMapping(data: TrendsData, sourceType: AnalysisMeasurementType | null, targetType: AnalysisMeasurementType | null, observed: readonly AnalysisValue[], targetValues: readonly AnalysisMappingValueOption[], sourceVersion: TrackableVersion, targetVersion: TrackableVersion): boolean {
   if (!sourceType || !targetType || !compatibleType(targetType, sourceType)) return false
-  if (!['nominal-single', 'ordinal'].includes(targetType)) return true
-  const targetKeys = new Set(targetValues.map((item) => item.value))
-  return observedKeys.every((key) => targetKeys.has(key))
+  if (targetType === 'ordinal' && JSON.stringify(sourceVersion.configuration.orderedOptionIds ?? null) !== JSON.stringify(targetVersion.configuration.orderedOptionIds ?? null)) return false
+  if (targetType === 'nominal-single' || targetType === 'nominal-multiselect' || targetType === 'ordinal') return observed.every((value) => {
+    if (!value.categories?.length) return targetType === 'ordinal' && Boolean(value.sourceValue && targetValues.some((target) => target.value === value.sourceValue))
+    const resolved = resolveHistoricalChoices(data, sourceVersion, targetVersion, value)
+    return resolved.unresolved.length === 0 && resolved.categories.length === (value.categories?.length ?? 0)
+  })
+  return true
 }
 
 function numericDefinitionValues(version: TrackableVersion): readonly number[] {
@@ -326,10 +361,12 @@ function numericDefinitionValues(version: TrackableVersion): readonly number[] {
 function versionCatalog(data: TrendsData, version: TrackableVersion, observedValues: readonly AnalysisValue[]): readonly AnalysisMappingValueOption[] {
   const counts = new Map<string, number>()
   for (const value of observedValues) {
-    const key = sourceKeyForAnalysisValue(value)
-    if (key) counts.set(key, (counts.get(key) ?? 0) + 1)
+    const keys = value.measurementType === 'nominal-multiselect'
+      ? value.categories?.map((category) => `option:${category.id}`) ?? []
+      : [sourceKeyForAnalysisValue(value)].filter((key): key is string => Boolean(key))
+    for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1)
   }
-  if (version.inputType === 'single_choice') {
+  if (version.inputType === 'single_choice' || version.inputType === 'multi_select') {
     const options = data.trackableOptions.filter((option) => option.trackableId === version.trackableId && option.trackableVersion === version.version && !option.deletedAt).sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label))
     const catalog = options.map((option) => ({ value: `option:${option.optionId}`, label: option.label, observedCount: counts.get(`option:${option.optionId}`) ?? 0 }))
     const known = new Set(catalog.map((item) => item.value))
@@ -372,14 +409,23 @@ export function analysisMappingOpportunity(data: TrendsData, descriptor: Analysi
   const observed = observedValuesForVersion(data, descriptor, source)
   const sourceValues = versionCatalog(data, source, observed)
   const targetValues = versionCatalog(data, target, [])
-  const observedKeys = observed.flatMap((value) => value.sourceValue ? [value.sourceValue] : [])
-  const coverage = mappingCoverage(observedKeys, mapping?.valueMappings ?? [])
+  const observedKeys = sourceType === 'nominal-multiselect'
+    ? [...new Set(observed.flatMap((value) => value.categories?.map((category) => `option:${category.id}`) ?? []))]
+    : observed.flatMap((value) => value.sourceValue ? [value.sourceValue] : [])
+  const resolvedSourceIds = new Set<string>()
+  if (!mapping && sourceType === 'nominal-multiselect' && targetType === 'nominal-multiselect') for (const value of observed) {
+    const unresolved = new Set(resolveHistoricalChoices(data, source, target, value).unresolved.map((category) => category.id))
+    for (const category of value.categories ?? []) if (!unresolved.has(category.id)) resolvedSourceIds.add(category.id)
+  }
+  const coverage = !mapping && sourceType === 'nominal-multiselect' && targetType === 'nominal-multiselect'
+    ? { mapped: observedKeys.filter((key) => resolvedSourceIds.has(key.slice('option:'.length))).length, total: observedKeys.length, percent: observedKeys.length ? Math.round(resolvedSourceIds.size / observedKeys.length * 100) : 100 }
+    : mappingCoverage(observedKeys, mapping?.valueMappings ?? [])
   const compatibility = analysisMappingCompatibility(sourceType, targetType)
   const status: AnalysisCompatibilityStatus = mapping
     ? (coverage.mapped === coverage.total ? 'fully-compatible' : 'partially-mapped')
-    : automaticallyCompatibleWithoutMapping(sourceType, targetType, observedKeys, targetValues)
+    : automaticallyCompatibleWithoutMapping(data, sourceType, targetType, observed, targetValues, source, target)
       ? 'fully-compatible'
-      : compatibility === 'supported' ? 'unmapped-historical' : 'incompatible'
+      : compatibility === 'supported' || (sourceType === 'nominal-multiselect' && targetType === 'nominal-multiselect') ? 'unmapped-historical' : 'incompatible'
   const ordinalOrder = mapping?.ordinalOrder ?? targetRepresentation?.ordinalOrder
   return { trackableId: trackable.id, sourceVersion: source.version, targetVersion: target.version, sourceName: source.name, targetName: target.name, sourceMeasurementType: sourceType, targetRawMeasurementType: currentRawType, targetMeasurementType: targetType, compatibility, status, sourceValues, targetValues, coverage, ...(ordinalOrder ? { ordinalOrder } : {}), ...(mapping ? { mapping } : {}) }
 }
@@ -450,6 +496,12 @@ function canonicalizeCurrentValue(value: AnalysisValue, targetType: AnalysisMapp
 
 export function buildAnalysisTrack(data: TrendsData, descriptor: AnalysisSeriesDescriptor, range: TrendRange, today: string): AnalysisTrack {
   const warnings: AnalysisWarning[] = []
+  const unresolvedValues = new Map<string, { version: TrackableVersion; label: string; reason: 'option' | 'order' | 'mapping'; count: number }>()
+  const noteUnresolved = (version: TrackableVersion, key: string, label: string, reason: 'option' | 'order' | 'mapping') => {
+    const identity = `${version.version}:${reason}:${key}`
+    const previous = unresolvedValues.get(identity)
+    unresolvedValues.set(identity, { version, label, reason, count: (previous?.count ?? 0) + 1 })
+  }
   const records = new Map(activeRecords(data).filter((record) => inRange(record.localDate, range, today)).map((record) => [record.id, record]))
   const values: AnalysisValue[] = []
   const units = new Set<string>()
@@ -482,8 +534,21 @@ export function buildAnalysisTrack(data: TrendsData, descriptor: AnalysisSeriesD
         warnings.push({ code: 'incompatible-version', recordId: record.id, message: `${version.name} v${version.version} is ${historicalType}; map its historical values before combining them with ${descriptor.name}.` })
         continue
       }
-      const interpreted = answerValue(data, observation, record.localDate, version, historicalType)
+      let interpreted = answerValue(data, observation, record.localDate, version, historicalType)
       if (!interpreted) continue
+      if (targetVersion && version.version !== targetVersion.version && !mapping && ['nominal-single', 'nominal-multiselect', 'ordinal'].includes(descriptor.measurementType)) {
+        const resolved = resolveHistoricalChoices(data, version, targetVersion, interpreted)
+        const orderChanged = descriptor.measurementType === 'ordinal' && JSON.stringify(version.configuration.orderedOptionIds ?? null) !== JSON.stringify(targetVersion.configuration.orderedOptionIds ?? null)
+        const scalarKey = sourceKeyForAnalysisValue(interpreted)
+        const unmatchedScalar = !interpreted.categories?.length && (!scalarKey || !versionCatalog(data, targetVersion, []).some((target) => target.value === scalarKey))
+        if (orderChanged || unmatchedScalar || resolved.unresolved.length || resolved.categories.length !== (interpreted.categories?.length ?? 0)) {
+          const unmatched = orderChanged ? interpreted.categories ?? [] : resolved.unresolved
+          for (const category of unmatched) noteUnresolved(version, category.id, category.label, orderChanged ? 'order' : 'option')
+          if (unmatchedScalar || (orderChanged && !unmatched.length)) noteUnresolved(version, scalarKey ?? interpreted.display, interpreted.display, orderChanged ? 'order' : 'option')
+          continue
+        }
+        interpreted = { ...interpreted, categories: resolved.categories }
+      }
       if (targetVersion && version.version === targetVersion.version) {
         const canonical = targetRepresentation
           ? canonicalizeCurrentValue(interpreted, targetRepresentation.targetMeasurementType, targetRepresentation.ordinalOrder)
@@ -497,13 +562,17 @@ export function buildAnalysisTrack(data: TrendsData, descriptor: AnalysisSeriesD
       if (mapping) {
         const mapped = applyAnalysisMapping(interpreted, mapping)
         if (mapped) values.push(mapped)
-        else warnings.push({ code: 'unmapped-value', recordId: record.id, message: `${version.name} v${version.version}: ${interpreted.display} is preserved but not included because it has no analysis mapping.` })
+        else noteUnresolved(version, sourceKeyForAnalysisValue(interpreted) ?? interpreted.display, interpreted.display, 'mapping')
         continue
       }
       const unit = unitForVersion(version, historicalType)
       if (unit) units.add(unit)
       values.push(interpreted)
     }
+  }
+  for (const item of [...unresolvedValues.values()].sort((left, right) => left.version.version - right.version.version || left.label.localeCompare(right.label))) {
+    const cause = item.reason === 'order' ? 'has a different current ordinal order' : item.reason === 'mapping' ? 'has no analysis mapping' : 'has no safely matching option in the current definition'
+    warnings.push({ code: 'unmapped-value', count: item.count, message: `${item.version.name} v${item.version.version}: ${item.label} ${cause} (${item.count} observation${item.count === 1 ? '' : 's'}).` })
   }
   values.sort((a, b) => a.localDate.localeCompare(b.localDate) || a.id.localeCompare(b.id))
   if (units.size > 1) warnings.push({ code: 'incompatible-unit', message: `${descriptor.name} uses multiple historical units (${[...units].join(', ')}); raw values are not overlaid.` })
