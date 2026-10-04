@@ -1,4 +1,4 @@
-import type { AnalysisValueMapping, AnalysisMappingMeasurementType, AnalysisValueMappingEntry, Category, LogRecord, Observation, ObservationOptionSelection, Trackable, TrackableDailyAssertion, TrackableField, TrackableOption, TrackableVersion } from '../domain/models/index.ts'
+import type { AnalysisValueMapping, AnalysisMappingMeasurementType, AnalysisValueMappingEntry, Category, LogRecord, Observation, ObservationOptionSelection, RoutineItem, Trackable, TrackableDailyAssertion, TrackableField, TrackableOption, TrackableVersion } from '../domain/models/index.ts'
 
 export interface TrendsData {
   analysisMappings: readonly AnalysisValueMapping[]
@@ -11,6 +11,8 @@ export interface TrendsData {
   trackableVersions: readonly TrackableVersion[]
   trackableFields: readonly TrackableField[]
   trackableDailyAssertions: readonly TrackableDailyAssertion[]
+  /** Optional for older analytics fixtures; the local provider includes it for eligibility-aware Insights. */
+  routineItems?: readonly RoutineItem[]
 }
 
 export interface AnalysisMappingDraft {

@@ -13,7 +13,7 @@ export class RepositoryAnalyticsProvider implements AnalyticsProvider {
   }
 
   async loadTrendsData(): Promise<TrendsData> {
-    const [analysisMappings, categories, logRecords, observations, observationSelections, trackables, trackableOptions, trackableVersions, trackableFields, trackableDailyAssertions] = await Promise.all([
+    const [analysisMappings, categories, logRecords, observations, observationSelections, trackables, trackableOptions, trackableVersions, trackableFields, trackableDailyAssertions, routineItems] = await Promise.all([
       this.repository.getAll('analysisMappings'),
       this.repository.getAll('categories'),
       this.repository.getAll('logRecords'),
@@ -24,8 +24,9 @@ export class RepositoryAnalyticsProvider implements AnalyticsProvider {
       this.repository.getAll('trackableVersions'),
       this.repository.getAll('trackableFields'),
       this.repository.getAll('trackableDailyAssertions'),
+      this.repository.getAll('routineItems'),
     ])
-    return { analysisMappings, categories, logRecords, observations, observationSelections, trackables, trackableOptions, trackableVersions, trackableFields, trackableDailyAssertions }
+    return { analysisMappings, categories, logRecords, observations, observationSelections, trackables, trackableOptions, trackableVersions, trackableFields, trackableDailyAssertions, routineItems }
   }
 
   async saveAnalysisMapping(draft: AnalysisMappingDraft): Promise<AnalysisValueMapping> {
