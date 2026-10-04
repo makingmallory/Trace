@@ -8,7 +8,8 @@ import type { SyncConnection } from '../../data/sync/SyncConnectionStore.ts'
 import { SYNC_METADATA_ID } from '../../data/sync/SyncService.ts'
 import { normalizeSyncConflicts } from '../../data/sync/SyncConflicts.ts'
 import { SYNC_STATUS_CHANGED_EVENT, publishSyncStatusChange } from '../../data/sync/SyncStatus.ts'
-import { serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
+import { autoSyncPreferenceStorage } from '../../data/sync/AutoSyncPreference.ts'
+import { requestConnectedSync, serviceForConnection, syncConnectionStorage } from '../../data/sync/syncRuntime.ts'
 import { shareTextFile } from '../../platform/nativeFiles.ts'
 import type { DailyReminderResult } from '../reminders/DailyReminderCoordinator.ts'
 import { createDailyReminderCoordinator } from '../reminders/reminderRuntime.ts'
@@ -34,6 +35,7 @@ export function SettingsScreen() {
   const [pending, setPending] = useState(0)
   const [conflictCount, setConflictCount] = useState(0)
   const [online, setOnline] = useState(() => navigator.onLine)
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(() => autoSyncPreferenceStorage.load())
   const [dailyReminderEnabled, setDailyReminderEnabled] = useState(false)
   const [dailyReminderTime, setDailyReminderTime] = useState('21:00')
   const [reminderBusy, setReminderBusy] = useState(false)
@@ -98,7 +100,8 @@ export function SettingsScreen() {
       }
       syncConnectionStorage.save(next)
       setConnection(next)
-      const result = await serviceForConnection(next).sync()
+      const result = await requestConnectedSync()
+      if (!result) throw new Error('Trace could not start the connected backup sync.')
       setSetupMode(null); setEndpointUrl(''); setState('success')
       setMessage(result.conflicts.length ? `${result.conflicts.length} record conflict${result.conflicts.length === 1 ? '' : 's'} preserved for review.` : `Backup connected. ${result.pulled} pulled and ${result.pushed} uploaded.`)
       await refreshStatus(next)
@@ -111,7 +114,8 @@ export function SettingsScreen() {
     setState('syncing'); setMessage('')
     publishSyncStatusChange({ syncing: true })
     try {
-      const result = await serviceForConnection(connection).sync()
+      const result = await requestConnectedSync()
+      if (!result) throw new Error('Trace could not start the connected backup sync.')
       setState(result.conflicts.length ? 'attention' : 'success')
       setMessage(result.conflicts.length ? `${result.conflicts.length} record conflict${result.conflicts.length === 1 ? '' : 's'} preserved; neither copy was overwritten.` : `Synced ${result.pulled + result.pushed} change${result.pulled + result.pushed === 1 ? '' : 's'}.`)
       await refreshStatus(connection)
@@ -121,6 +125,11 @@ export function SettingsScreen() {
 
   function disconnect() {
     syncConnectionStorage.clear(); setConnection(null); setSetupMode(null); setState('idle'); setMessage('Google Sheets backup disconnected. Your local data is unchanged.'); publishSyncStatusChange()
+  }
+
+  function updateAutoSync(enabled: boolean) {
+    autoSyncPreferenceStorage.save(enabled)
+    setAutoSyncEnabled(enabled)
   }
 
   async function exportBackup() {
@@ -188,6 +197,7 @@ export function SettingsScreen() {
             <details className="sync-manage"><summary>Manage Backup</summary><div><button className="text-button" type="button" onClick={() => { setSetupMode('existing'); setEndpointUrl(connection.endpointUrl) }}>Reconnect or Change Backup</button><button className="text-button" type="button" onClick={() => { setSetupMode('new'); setEndpointUrl('') }}>Use a Replacement Sheet</button><button className="text-button" type="button" onClick={disconnect}>Disconnect</button></div></details>
           </>
         )}
+        <div className="sync-auto-setting"><label><input type="checkbox" checked={autoSyncEnabled} disabled={!connection} onChange={(event) => updateAutoSync(event.target.checked)} /> Auto Sync</label><p>{connection ? 'Automatically sync after changes and when you return to Trace.' : 'Connect Google Sheets Backup to enable Auto Sync.'}</p></div>
         {setupMode ? <form className="sync-setup" onSubmit={(event) => void connect(event)}><h3>{setupMode === 'new' ? 'Set Up Your Backup' : 'Connect an Existing Backup'}</h3><p>{setupMode === 'new' ? <>Create a Sheet, add Trace’s Apps Script, deploy it, then paste the connection URL here. The repository guide is <code>docs/google-sync-setup.md</code>.</> : 'Use the connection URL from the Apps Script attached to your existing Trace Sheet. Trace validates and safely merges both copies.'}</p><label htmlFor="sync-url">Apps Script connection URL</label><input id="sync-url" type="url" required value={endpointUrl} onChange={(event) => setEndpointUrl(event.target.value)} placeholder="https://script.google.com/macros/s/…/exec" autoComplete="off" spellCheck={false} /><small>This stays on this device and is never built into Trace.</small><div className="sync-actions"><button className="primary-button" type="submit" disabled={state === 'connecting'}>{state === 'connecting' ? 'Validating…' : setupMode === 'new' ? 'Connect Backup' : 'Validate and Merge'}</button><button className="secondary-button" type="button" onClick={() => setSetupMode(null)}>Cancel</button></div></form> : null}
         {message ? <p className={`sync-message sync-message--${state}`} role="status">{message}</p> : null}
       </section>
