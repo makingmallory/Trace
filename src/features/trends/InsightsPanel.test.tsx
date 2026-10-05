@@ -12,10 +12,10 @@ const family = groupRelationshipFamilies([{ targetDescriptorId: 'energy', candid
 const noop = () => undefined
 
 describe('Trends Insights markup', () => {
-  it('shows only Explore and Insights top-level navigation', () => {
+  it('shows Explore, Insights, and Forecast top-level navigation', () => {
     const html = renderToStaticMarkup(<MemoryRouter><TrendsScreen /></MemoryRouter>)
     expect(html).toContain('Explore</button>'); expect(html).toContain('Insights</button>')
-    expect(html).not.toContain('Forecast')
+    expect(html).toContain('Forecast</button>')
     expect(html).toContain('aria-current="page"')
   })
   it('shows a restrained loading state before discovery returns', () => {

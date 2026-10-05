@@ -5,6 +5,7 @@ import { localDateFor } from '../../domain/checkin/CheckInEngine.ts'
 import { checkInRouteForToday } from '../checkin/checkInNavigation.ts'
 import { TodayEvents } from '../events/EventScreens.tsx'
 import { MainPageHeader } from '../../components/MainPageHeader.tsx'
+import { TomorrowGlance } from './TomorrowGlance.tsx'
 
 type TodayState = 'not_started' | 'draft' | 'completed'
 
@@ -37,5 +38,6 @@ export function HomeScreen() {
       <Link className="planned-action home-action home-action--quick-log" to="/quick-log"><span aria-hidden="true">＋</span><div><strong>Quick Log</strong><small>Anything else</small></div><b aria-hidden="true">›</b></Link>
     </div>
     <section className="today-card"><h2>Today</h2><div className="today-checkin-row"><Link className="today-checkin-link" to={checkInPath}><span className={`status-dot status-dot--${state}`} aria-hidden="true" /><span><strong>Daily Check-In</strong><small>{configured ? stateCopy[state] : 'Needs Setup'}</small></span></Link><Link className="today-checkin-action" to={checkInPath}>{actionLabel(state, Boolean(configured))}</Link></div><TodayEvents localDate={localDateFor(new Date())} /></section>
+    <TomorrowGlance />
   </div></section>
 }

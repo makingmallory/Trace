@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import type { TrendsData } from '../../analytics/AnalyticsProvider.ts'
 import { analysisSeriesOptions, buildAnalysisView, hasSupportedAnalysisDefinition, type AnalysisSourceInputType, type AnalysisTrack, type AnalysisTransformation, type AnalysisValue } from '../../analytics/analysisModel.ts'
 import { analysisSourceInputLabels, filterAnalysisSeries, groupAnalysisSeries } from '../../analytics/analysisSelector.ts'
@@ -11,6 +11,7 @@ import { analyticsProvider } from './analyticsProvider.ts'
 import { trendsMappingEditPath } from './trendsNavigation.ts'
 import { MainPageHeader } from '../../components/MainPageHeader.tsx'
 import { InsightsPanel } from './InsightsPanel.tsx'
+import { ForecastPanel } from './ForecastPanel.tsx'
 
 const ranges: readonly { value: TrendRange; label: string }[] = [{ value: 7, label: '7 days' }, { value: 30, label: '30 days' }, { value: 90, label: '90 days' }, { value: 'all', label: 'All' }]
 const transformations: readonly { value: AnalysisTransformation; label: string }[] = [{ value: 'raw', label: 'Raw values' }, { value: 'normalize', label: 'Normalize 0–100' }, { value: 'z-score', label: 'Standardize' }]
@@ -153,10 +154,15 @@ function ExploreScreen({ handoff }: { handoff: readonly string[] | null }) {
 }
 
 export function TrendsScreen() {
-  const [tab, setTab] = useState<'explore' | 'insights'>('explore')
+  const location = useLocation()
+  const initialForecast = new URLSearchParams(location.search).get('tab') === 'forecast'
+  const [tab, setTab] = useState<'explore' | 'insights' | 'forecast'>(initialForecast ? 'forecast' : 'explore')
   const [visitedInsights, setVisitedInsights] = useState(false)
+  const [visitedForecast, setVisitedForecast] = useState(initialForecast)
   const [insightsData, setInsightsData] = useState<TrendsData | null>(null)
+  const [forecastData, setForecastData] = useState<TrendsData | null>(null)
   const [handoff, setHandoff] = useState<readonly string[] | null>(null)
+  useEffect(() => { if (new URLSearchParams(location.search).get('tab') === 'forecast') { setVisitedForecast(true); setTab('forecast') } }, [location.search])
   useEffect(() => {
     if (!visitedInsights) return
     let active = true
@@ -164,6 +170,13 @@ export function TrendsScreen() {
     load(); globalThis.addEventListener('trace:data-changed', load)
     return () => { active = false; globalThis.removeEventListener('trace:data-changed', load) }
   }, [visitedInsights])
+  useEffect(() => {
+    if (!visitedForecast) return
+    let active = true
+    const load = () => void analyticsProvider.loadTrendsData().then((data) => { if (active) setForecastData(data) })
+    load(); globalThis.addEventListener('trace:data-changed', load)
+    return () => { active = false; globalThis.removeEventListener('trace:data-changed', load) }
+  }, [visitedForecast])
   function explore(target: string, source?: string) { setHandoff([target, ...(source && source !== target ? [source] : [])]); setTab('explore') }
-  return <section className="screen main-page-screen trends-screen"><MainPageHeader eyebrow="Patterns" title="Trends" subtitle="Explore your records and review patterns worth noticing." /><nav className="analysis-tabs" aria-label="Trends sections"><button type="button" aria-current={tab === 'explore' ? 'page' : undefined} onClick={() => setTab('explore')}>Explore</button><button type="button" aria-current={tab === 'insights' ? 'page' : undefined} onClick={() => { setVisitedInsights(true); setTab('insights') }}>Insights</button></nav><div hidden={tab !== 'explore'}><ExploreScreen handoff={handoff} /></div>{visitedInsights ? <div hidden={tab !== 'insights'}><InsightsPanel data={insightsData} onExplore={explore} /></div> : null}</section>
+  return <section className="screen main-page-screen trends-screen"><MainPageHeader eyebrow="Patterns" title="Trends" subtitle="Explore your records, review patterns, and see careful next-day estimates." /><nav className="analysis-tabs" aria-label="Trends sections"><button type="button" aria-current={tab === 'explore' ? 'page' : undefined} onClick={() => setTab('explore')}>Explore</button><button type="button" aria-current={tab === 'insights' ? 'page' : undefined} onClick={() => { setVisitedInsights(true); setTab('insights') }}>Insights</button><button type="button" aria-current={tab === 'forecast' ? 'page' : undefined} onClick={() => { setVisitedForecast(true); setTab('forecast') }}>Forecast</button></nav><div hidden={tab !== 'explore'}><ExploreScreen handoff={handoff} /></div>{visitedInsights ? <div hidden={tab !== 'insights'}><InsightsPanel data={insightsData} onExplore={explore} /></div> : null}{visitedForecast ? <div hidden={tab !== 'forecast'}><ForecastPanel data={forecastData} /></div> : null}</section>
 }
