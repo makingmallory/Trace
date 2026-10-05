@@ -1,12 +1,18 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import type { ForecastPrediction, ForecastResult, ForecastTarget, ForecastWeekResult, HorizonForecastResult } from '../../analytics/forecasting/forecastTypes.ts'
+import type { ForecastPrediction, ForecastResult, ForecastTarget, ForecastWeekResult, HorizonForecastResult, PlanningForecastResult } from '../../analytics/forecasting/forecastTypes.ts'
 import { forecastDateLabel, localForecastDates } from '../../analytics/forecasting/forecastPresentation.ts'
-import { ForecastCard, ForecastMethodology, ForecastPanel, WeekForecastCard } from './ForecastPanel.tsx'
+import { CrossTargetPlanningSummary, ForecastCard, ForecastMethodology, ForecastPanel, PlanningForecastCard, WeekForecastCard } from './ForecastPanel.tsx'
 
 const target = { descriptorId: 'energy', trackableId: 'energy', label: 'Energy', measurementType: 'continuous' as const, kind: 'numeric' as const }
 const ready = (prediction: ForecastResult['prediction']): ForecastResult => ({ status: 'ready', target, forecastDate: '2026-10-05', generatedAt: '2026-10-04T23:59:59.999Z', dataCutoffDate: '2026-10-04', prediction, confidence: 'moderate', selectedModelKind: 'baseline', baselineModel: 'recent-mean', validationMetric: 'mae', validationScore: .5, baselineScore: .5, improvement: 0, regimeStrategy: 'full-history', contributors: [], warnings: [], diagnostics: { usableObservations: 80, missingness: .1, folds: [], reviewedFeatureFeedback: [], excludedFeatureKeys: [] } })
 const week = (weekTarget: ForecastTarget, prediction: ForecastPrediction): ForecastWeekResult => ({ target: weekTarget, weeklyConfidence: 'moderate', confidenceSummary: 'Moderate confidence through Wednesday; lower later in the week.', summary: '6 of 7 days have a usable estimate.', days: Array.from({ length: 7 }, (_, index): HorizonForecastResult => ({ ...ready(index === 6 ? undefined : prediction), target: weekTarget, forecastDate: `2026-10-${String(5 + index).padStart(2, '0')}`, horizon: index + 1, horizonState: index === 6 ? 'insufficient' : index > 2 ? 'rough' : 'ready', usedRecursiveInputs: index > 0, status: index === 6 ? 'insufficient-history' : 'ready', confidence: index > 1 ? 'low' : 'moderate', diagnostics: { ...ready(undefined).diagnostics, horizon: index + 1, uninformativeRange: false } })) })
+const planning = (planningTarget = target): PlanningForecastResult => ({ target: planningTarget, horizonDays: 30, selectedStrategy: 'recent-history', strategyScores: [{ strategy: 'recent-history', score: .4, validationCount: 20 }], validationMetric: 'mae', intervalCoverage: .8, confidenceSummary: 'Confidence is moderate through 2026-10-18; later windows are more uncertain.', summary: '23 of 30 days contribute to the planning windows.', regimeStrategy: 'full-history', usableFraction: 23 / 30, days: [], windows: [
+  { startDate: '2026-10-05', endDate: '2026-10-11', startHorizon: 1, endHorizon: 7, state: 'useful', confidence: 'moderate', usableDays: 7, totalDays: 7, prediction: { kind: 'numeric', estimate: 3.5, likelyLow: 3, likelyHigh: 4 }, normalizedScore: 0, direction: 'around-usual', preference: 'neutral', summary: 'Expected to stay around your recent pattern.' },
+  { startDate: '2026-10-12', endDate: '2026-10-18', startHorizon: 8, endHorizon: 14, state: 'rough', confidence: 'moderate', usableDays: 7, totalDays: 7, prediction: { kind: 'numeric', estimate: 4, likelyLow: 2.8, likelyHigh: 4.8 }, normalizedScore: .2, direction: 'higher', preference: 'unknown', summary: 'Trends higher than your recent pattern.' },
+  { startDate: '2026-10-19', endDate: '2026-10-25', startHorizon: 15, endHorizon: 21, state: 'rough', confidence: 'low', usableDays: 6, totalDays: 7, prediction: { kind: 'numeric', estimate: 3.7, likelyLow: 2, likelyHigh: 5 }, normalizedScore: .1, direction: 'around-usual', preference: 'neutral', summary: 'Expected to stay around your recent pattern.' },
+  { startDate: '2026-10-26', endDate: '2026-11-03', startHorizon: 22, endHorizon: 30, state: 'insufficient', confidence: 'low', usableDays: 3, totalDays: 9, direction: 'uncertain', preference: 'unknown', summary: 'Not enough evidence for a useful estimate this far out.' },
+] })
 
 describe('Forecast cards', () => {
   it('formats the actual next local date and numeric uncertainty without repeating tomorrow', () => {
@@ -53,9 +59,20 @@ describe('Forecast cards', () => {
     const uninformative = { ...item, days: item.days.map((day) => ({ ...day, diagnostics: { ...day.diagnostics, uninformativeRange: true } })) }
     expect(renderToStaticMarkup(<WeekForecastCard week={uninformative} />)).not.toContain('forecast-chart__range')
   })
-  it('offers Tomorrow and 7 days in one Forecast surface', () => {
+  it('offers Tomorrow, 7 days, and 30 days in one Forecast surface', () => {
     const html = renderToStaticMarkup(<ForecastPanel data={null} />)
-    expect(html).toContain('aria-label="Forecast horizon"'); expect(html).toContain('Tomorrow</button>'); expect(html).toContain('7 days</button>')
+    expect(html).toContain('aria-label="Forecast horizon"'); expect(html).toContain('Tomorrow</button>'); expect(html).toContain('7 days</button>'); expect(html).toContain('30 days</button>')
+  })
+  it('renders compact planning windows, confidence decay, and focusable aggregate tooltips', () => {
+    const html = renderToStaticMarkup(<PlanningForecastCard result={planning()} />)
+    expect(html).toContain('forecast-planning-card'); expect(html).toContain('Oct 5–Oct 11'); expect(html).toContain('Trends higher than your recent pattern')
+    expect(html).toContain('insufficient'); expect(html).toContain('planning-chart'); expect(html).toContain('chart-tooltip-hit'); expect(html).toContain('tabindex="0"')
+    expect((html.match(/planning-window-state/g) ?? []).length).toBeGreaterThanOrEqual(4)
+  })
+  it('keeps cross-target planning summaries separate and neutral', () => {
+    const second = planning({ ...target, descriptorId: 'mood', trackableId: 'mood', label: 'Mood' })
+    const html = renderToStaticMarkup(<CrossTargetPlanningSummary results={[planning(), second]} />)
+    expect(html).toContain('Next few weeks'); expect(html).toContain('Energy'); expect(html).toContain('Mood'); expect(html).not.toContain('best vacation')
   })
   it('keeps common methodology once below the result cards instead of repeating it per card', () => {
     const html = renderToStaticMarkup(<ForecastMethodology />)

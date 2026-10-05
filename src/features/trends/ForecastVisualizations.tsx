@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { ForecastWeekResult, HorizonForecastResult } from '../../analytics/forecasting/forecastTypes.ts'
+import type { ForecastWeekResult, HorizonForecastResult, PlanningForecastResult, PlanningWindowResult } from '../../analytics/forecasting/forecastTypes.ts'
 import { ChartTooltip } from './ChartTooltip.tsx'
 import { useChartTooltip } from './chartTooltipInteraction.ts'
 
@@ -60,6 +60,39 @@ export function ForecastWeekVisualization({ week }: { week: ForecastWeekResult }
   if (first.kind === 'binary') return <BinaryWeekChart week={week} />
   if (first.kind === 'nominal') return <NominalWeekTimeline week={week} />
   return <MultiSelectWeekTrends week={week} />
+}
+
+const windowValue = (window: PlanningWindowResult): number | null => {
+  const prediction = window.prediction
+  if (!prediction) return null
+  if (prediction.kind === 'numeric' || prediction.kind === 'ordinal') return prediction.estimate
+  if (prediction.kind === 'binary') return prediction.probability
+  return prediction.probabilities[0]?.probability ?? null
+}
+
+const planningRange = (window: PlanningWindowResult): string => {
+  const prediction = window.prediction
+  if (!prediction) return 'No usable estimate'
+  if (prediction.kind === 'numeric' || prediction.kind === 'ordinal') return `Expected: ${compact(prediction.likelyLow)}–${compact(prediction.likelyHigh)}`
+  if (prediction.kind === 'binary') return `Average chance: ${percent(prediction.probability)}`
+  const top = prediction.probabilities[0]
+  return top ? `${top.label}: ${percent(top.probability)}` : 'No usable estimate'
+}
+
+export function PlanningForecastVisualization({ result }: { result: PlanningForecastResult }) {
+  const chart = useChartTooltip(); const values = result.windows.map(windowValue)
+  const numeric = result.target.kind === 'numeric' || result.target.kind === 'ordinal'
+  const candidates = result.windows.flatMap((window) => window.prediction && (window.prediction.kind === 'numeric' || window.prediction.kind === 'ordinal') ? [window.prediction.likelyLow, window.prediction.likelyHigh] : [])
+  const low = numeric ? result.target.minimum ?? Math.min(...candidates, ...values.filter((value): value is number => value !== null), 0) : 0
+  const high = numeric ? result.target.maximum ?? Math.max(...candidates, ...values.filter((value): value is number => value !== null), low + 1) : 1
+  const width = 312; const left = 24; const step = (width - left * 2) / Math.max(1, result.windows.length - 1)
+  const plot = values.map((value, index) => value === null ? null : { x: left + index * step, y: scale(value, low, high, 14, 76) })
+  const path = plot.reduce<string[]>((parts, point, index) => point ? [...parts, `${index && plot[index - 1] ? 'L' : 'M'}${point.x},${point.y}`] : parts, []).join(' ')
+  return <div ref={chart.rootRef} className="planning-chart chart-tooltip-region"><svg viewBox="0 0 312 126" role="img" aria-label={`${result.target.label}: ${result.summary}. ${result.confidenceSummary}`} onClick={chart.dismiss}><line className="forecast-chart__axis" x1="24" x2="288" y1="90" y2="90" />
+    {path ? <path className="forecast-chart__line" d={path} /> : null}
+    {plot.map((point, index) => { const window = result.windows[index]; if (!point) return null; const content = { id: `${window.startDate}/${window.endDate}`, title: `${fullDate(window.startDate)} – ${fullDate(window.endDate)}`, lines: [result.target.label, planningRange(window), `Confidence: ${window.confidence}`], x: point.x / 312 * 100, y: point.y / 126 * 100 }; return <g key={content.id}><circle className="chart-tooltip-hit" cx={point.x} cy={point.y} r="15" {...chart.markerProps(content)} /><circle className="forecast-chart__point" cx={point.x} cy={point.y} r="4.5" /></g> })}
+    {result.windows.map((window, index) => <text className="forecast-chart__date" key={window.startDate} x={left + index * step} y="112" textAnchor="middle">{new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(`${window.startDate}T12:00:00`))}</text>)}
+  </svg><ChartTooltip tooltip={chart.tooltip} /></div>
 }
 
 export function ForecastIdentityMark({ identity }: { identity?: ForecastIdentity }) {

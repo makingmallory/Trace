@@ -40,17 +40,17 @@ function targetFor(descriptor: AnalysisSeriesDescriptor, values: readonly Analys
   const version = data.trackableVersions.find((item) => item.trackableId === descriptor.trackableId && item.version === trackable?.currentVersion)
   const scaleBounds = version?.scaleMin !== undefined && version.scaleMax !== undefined ? { minimum: version.scaleMin, maximum: version.scaleMax } : {}
   if (['continuous', 'count', 'duration', 'time'].includes(descriptor.measurementType)) {
-    return { ...base, kind: 'numeric', ...scaleBounds, ...(descriptor.measurementType === 'count' ? { minimum: 0 } : {}) }
+    return { ...base, kind: 'numeric', valueDirection: version?.valueDirection, ...scaleBounds, ...(descriptor.measurementType === 'count' ? { minimum: 0 } : {}) }
   }
   if (descriptor.measurementType === 'ordinal') {
     const ordered = version?.configuration.orderedOptionIds
     const options = Array.isArray(ordered) ? ordered.filter((id): id is string => typeof id === 'string').map((id) => ({ id, label: data.trackableOptions.find((option) => option.trackableId === descriptor.trackableId && option.optionId === id && option.trackableVersion === trackable?.currentVersion)?.label ?? id })) : undefined
-    return { ...base, kind: 'ordinal', ...(options?.length ? { minimum: 0, maximum: options.length - 1, options } : scaleBounds) }
+    return { ...base, kind: 'ordinal', valueDirection: version?.valueDirection, ...(options?.length ? { minimum: 0, maximum: options.length - 1, options } : scaleBounds) }
   }
-  if (descriptor.measurementType === 'binary') return { ...base, kind: 'binary' }
+  if (descriptor.measurementType === 'binary') return { ...base, kind: 'binary', valueDirection: version?.valueDirection }
   if (descriptor.measurementType === 'nominal-single' || descriptor.measurementType === 'nominal-multiselect') {
     const options = new Map(values.flatMap((value) => value.categories ?? []).map((item) => [optionId(item.id), item.label]))
-    return options.size ? { ...base, kind: descriptor.measurementType === 'nominal-single' ? 'nominal' : 'multiselect', options: [...options].map(([id, label]) => ({ id, label })).sort((a, b) => a.id.localeCompare(b.id)) } : null
+    return options.size ? { ...base, kind: descriptor.measurementType === 'nominal-single' ? 'nominal' : 'multiselect', valueDirection: version?.valueDirection, options: [...options].map(([id, label]) => ({ id, label })).sort((a, b) => a.id.localeCompare(b.id)) } : null
   }
   return null // An occurrence is not a defensible daily binary target without an explicit daily assertion series.
 }

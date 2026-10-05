@@ -5,10 +5,12 @@ import { LocalPredictionProvider } from '../../predictions/LocalPredictionProvid
 
 const predictionProvider = new LocalPredictionProvider()
 
-self.onmessage = (event: MessageEvent<{ data: TrendsData; asOfDate: string; asOfTimestamp: string; reviews: readonly RelationshipReview[]; targetDescriptorIds?: readonly string[]; horizonDays?: number }>) => {
+self.onmessage = (event: MessageEvent<{ data: TrendsData; asOfDate: string; asOfTimestamp: string; reviews: readonly RelationshipReview[]; targetDescriptorIds?: readonly string[]; horizonDays?: number; planning?: boolean; windowDays?: readonly number[] }>) => {
   try {
     const request = { asOfDate: event.data.asOfDate, asOfTimestamp: event.data.asOfTimestamp, reviews: event.data.reviews, targetDescriptorIds: event.data.targetDescriptorIds }
-    const operation = event.data.horizonDays && event.data.horizonDays > 1 ? predictionProvider.forecastRange(event.data.data, { ...request, horizonDays: event.data.horizonDays }) : predictionProvider.forecastTomorrow(event.data.data, request)
+    const operation = event.data.planning
+      ? predictionProvider.forecastPlanning(event.data.data, { ...request, horizonDays: event.data.horizonDays ?? 30, windowDays: event.data.windowDays })
+      : event.data.horizonDays && event.data.horizonDays > 1 ? predictionProvider.forecastRange(event.data.data, { ...request, horizonDays: event.data.horizonDays }) : predictionProvider.forecastTomorrow(event.data.data, request)
     void operation.then((results) => self.postMessage({ results })).catch((error: unknown) => self.postMessage({ error: error instanceof Error ? error.message : 'Forecasting failed' }))
   }
   catch (error) { self.postMessage({ error: error instanceof Error ? error.message : 'Forecasting failed' }) }

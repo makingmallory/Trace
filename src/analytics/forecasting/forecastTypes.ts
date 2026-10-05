@@ -9,6 +9,10 @@ export type ForecastCapability = 'basic' | 'validated' | 'model'
 export type ForecastUncertaintyMethod = 'holdout-residuals' | 'recent-dispersion' | 'target-fallback' | 'not-applicable'
 export type ForecastHorizonState = 'ready' | 'rough' | 'insufficient'
 export type ForecastFeatureAvailability = 'calendar-known' | 'historically-known' | 'recursive-target' | 'unavailable-future'
+export type PlanningUsefulness = 'useful' | 'rough' | 'insufficient'
+export type PlanningStrategy = 'recursive-continuation' | 'recent-history' | 'seasonal-calendar'
+export type PlanningDirection = 'higher' | 'lower' | 'around-usual' | 'more-likely' | 'less-likely' | 'mixed' | 'uncertain'
+export type PlanningPreference = 'favorable' | 'unfavorable' | 'neutral' | 'unknown'
 
 export interface ForecastPolicy {
   minimumBaselineNumeric: number
@@ -40,6 +44,8 @@ export interface ForecastTarget {
   options?: readonly { id: string; label: string }[]
   minimum?: number
   maximum?: number
+  /** Existing Trackable semantics; planning stays neutral when this is absent or neutral. */
+  valueDirection?: 'better' | 'worse' | 'neutral'
 }
 
 export interface ForecastFold {
@@ -129,6 +135,74 @@ export interface ForecastWeekResult {
 
 export interface ForecastRangeRequest extends Omit<ForecastRequest, 'forecastDate'> {
   horizonDays: number
+}
+
+export interface PlanningWindowConfiguration {
+  /** Consecutive window sizes. Remaining days are included in a final window. */
+  windowDays?: readonly number[]
+}
+
+export interface PlanningForecastRequest extends Omit<ForecastRequest, 'forecastDate'>, PlanningWindowConfiguration {
+  horizonDays: number
+}
+
+export interface PlanningStrategyScore {
+  strategy: PlanningStrategy
+  score?: number
+  validationCount: number
+}
+
+export interface PlanningWindowResult {
+  startDate: string
+  endDate: string
+  startHorizon: number
+  endHorizon: number
+  state: PlanningUsefulness
+  confidence: ForecastConfidence
+  usableDays: number
+  totalDays: number
+  prediction?: ForecastPrediction
+  normalizedScore?: number
+  direction: PlanningDirection
+  preference: PlanningPreference
+  summary: string
+}
+
+export interface PlanningForecastResult {
+  target: ForecastTarget
+  horizonDays: number
+  days: readonly HorizonForecastResult[]
+  windows: readonly PlanningWindowResult[]
+  selectedStrategy: PlanningStrategy
+  strategyScores: readonly PlanningStrategyScore[]
+  validationMetric: 'mae' | 'brier' | 'multiclass-brier'
+  intervalCoverage?: number
+  confidenceSummary: string
+  summary: string
+  regimeStrategy: 'full-history' | 'current-regime'
+  /** Fraction of requested future days that remain usable or rough. */
+  usableFraction: number
+}
+
+export interface CrossTargetPlanningItem {
+  descriptorId: string
+  label: string
+  summary: string
+  state: PlanningUsefulness
+  preference: PlanningPreference
+}
+
+export interface CrossTargetPlanningWindow {
+  startDate: string
+  endDate: string
+  items: readonly CrossTargetPlanningItem[]
+}
+
+/** Hook for a later goal editor; this milestone does not create or persist goals. */
+export interface PlanningGoalPreference {
+  targetDescriptorId: string
+  objective: 'increase' | 'decrease' | 'stability'
+  weight?: number
 }
 
 export interface ForecastRequest {
