@@ -31,11 +31,15 @@ describe('Home Tomorrow glance', () => {
     expect(forecastGlanceValue(items[3])).toBe('Most likely: Good')
     expect(forecastGlanceValue(items[4])).toBe('Jaw 72% · Chin 48%')
   })
-  it('shows loading, no-forecast state, rows, and direct Forecast navigation', () => {
+  it('shows loading, no-forecast state, intentional forecast widgets, and direct Forecast navigation', () => {
     const render = (results: readonly ForecastResult[] | null, selected: string[], loading = false) => renderToStaticMarkup(<MemoryRouter><TomorrowGlanceContent results={results} selected={selected} loading={loading} error="" /></MemoryRouter>)
     expect(render(null, ['Energy'], true)).toContain('Preparing tomorrow')
     expect(render(items, ['Sparse'])).toContain('need more recent history')
     const html = render(items, ['Energy'])
-    expect(html).toContain('Likely 4'); expect(html).toContain('/trends?tab=forecast'); expect(html).not.toContain('Acne Present')
+    expect(html).toContain('>4</b>'); expect(html).toContain('/trends?tab=forecast'); expect(html).toContain('tomorrow-glance__action'); expect(html).toContain('forecast-identity'); expect(html).toContain('tomorrow-glance__value'); expect(html).toContain('tomorrow-glance__probability'); expect(html).not.toContain('<small>Tomorrow</small>'); expect(html).not.toContain('Acne Present')
+  })
+  it('uses separate value and probability cells with concrete binary output', () => {
+    const html = renderToStaticMarkup(<MemoryRouter><TomorrowGlanceContent results={items} selected={['Acne Present']} loading={false} error="" /></MemoryRouter>)
+    expect(html).toContain('tomorrow-glance__name">Acne Present'); expect(html).toContain('tomorrow-glance__value">Yes'); expect(html).toContain('tomorrow-glance__probability">97%')
   })
 })

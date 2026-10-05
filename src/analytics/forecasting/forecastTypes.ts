@@ -7,6 +7,8 @@ export type ForecastConfidence = 'low' | 'moderate' | 'high'
 export type ForecastStatus = 'ready' | 'insufficient-history' | 'not-forecastable'
 export type ForecastCapability = 'basic' | 'validated' | 'model'
 export type ForecastUncertaintyMethod = 'holdout-residuals' | 'recent-dispersion' | 'target-fallback' | 'not-applicable'
+export type ForecastHorizonState = 'ready' | 'rough' | 'insufficient'
+export type ForecastFeatureAvailability = 'calendar-known' | 'historically-known' | 'recursive-target' | 'unavailable-future'
 
 export interface ForecastPolicy {
   minimumBaselineNumeric: number
@@ -25,6 +27,8 @@ export interface ForecastPolicy {
   regularization: readonly number[]
   maximumPredictors: number
   minimumResidualSupport: number
+  horizonObservationStep: number
+  minimumHorizonCalibration: number
 }
 
 export interface ForecastTarget {
@@ -67,6 +71,19 @@ export interface ForecastDiagnostics {
   uncertaintyMethod?: ForecastUncertaintyMethod
   uninformativeRange?: boolean
   limitedVariation?: boolean
+  horizon?: number
+  horizonCalibrationCount?: number
+  horizonCalibrationError?: number
+  recursiveInputs?: readonly RecursiveForecastInput[]
+  featureAvailability?: readonly { featureKey: string; availability: ForecastFeatureAvailability }[]
+}
+
+export interface RecursiveForecastInput {
+  sourceHorizon: number
+  forecastDate: string
+  kind: ForecastPrediction['kind']
+  value: number | string | readonly string[]
+  uncertainty: number
 }
 
 export interface NumericPrediction { kind: 'numeric'; estimate: number; likelyLow: number; likelyHigh: number; label?: string }
@@ -96,9 +113,31 @@ export interface ForecastResult {
   diagnostics: ForecastDiagnostics
 }
 
+export interface HorizonForecastResult extends ForecastResult {
+  horizon: number
+  horizonState: ForecastHorizonState
+  usedRecursiveInputs: boolean
+}
+
+export interface ForecastWeekResult {
+  target: ForecastTarget
+  days: readonly HorizonForecastResult[]
+  weeklyConfidence: ForecastConfidence
+  confidenceSummary: string
+  summary: string
+}
+
+export interface ForecastRangeRequest extends Omit<ForecastRequest, 'forecastDate'> {
+  horizonDays: number
+}
+
 export interface ForecastRequest {
   forecastDate: string
   asOfDate: string
+  /** Internal multi-step context; omitted by the stable one-step API and therefore defaults to h1. */
+  horizon?: number
+  /** Root cutoff for training outcomes during recursion; predicted rows after this date are feature inputs only. */
+  historyCutoffDate?: string
   asOfTimestamp?: string
   targetDescriptorIds?: readonly string[]
   reviews?: readonly RelationshipReview[]

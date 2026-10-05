@@ -6,12 +6,14 @@ import { reviewFeedbackWeight, type RelationshipReview } from '../insights/insig
 import { discoverRelationships } from '../relationships/relationshipDiscovery.ts'
 import type { FeatureDefinition } from '../features/featureTypes.ts'
 import type { ForecastConfidence, ForecastDiagnostics, ForecastFeatureSummary, ForecastFold, ForecastModelKind, ForecastPolicy, ForecastRequest, ForecastResult, ForecastTarget } from './forecastTypes.ts'
+import { forecastFeatureAvailability } from './featureAvailability.ts'
 
 export const defaultForecastPolicy: ForecastPolicy = {
   minimumBaselineNumeric: 8, minimumBaselineCategorical: 8, minimumRecentObservations: 5, recentCoverageDays: 30, maximumLatestAgeDays: 21,
   minimumTraining: 18, minimumValidation: 6, minimumFolds: 3, maximumFolds: 5,
   minimumClassCases: 4, maximumMissingness: .55, recentWindow: 7, prevalenceWindow: 30,
   regularization: [.05, .5, 2], maximumPredictors: 12, minimumResidualSupport: 12,
+  horizonObservationStep: 3, minimumHorizonCalibration: 8,
 }
 
 type ScalarKind = 'numeric' | 'binary'
@@ -132,8 +134,8 @@ export function forecastFeatureReviewWeight(feature: FeatureDefinition, reviews:
 }
 
 /** Only lagged values and calendar facts are known for tomorrow; events and same-day values are deliberately excluded. */
-function forecastFeatures(definitions: readonly FeatureDefinition[], target: ForecastTarget, reviews: readonly RelationshipReview[], maximum: number, approvedRelationshipKeys: ReadonlySet<string>): { definitions: FeatureDefinition[]; feedback: Map<string, { weight: number; review?: RelationshipReview }>; excluded: string[] } {
-  const safe = definitions.filter((item) => item.transformation.kind === 'calendar' || item.transformation.kind === 'lag' && (item.source?.trackableId === target.trackableId || approvedRelationshipKeys.has(item.key)))
+function forecastFeatures(definitions: readonly FeatureDefinition[], target: ForecastTarget, reviews: readonly RelationshipReview[], maximum: number, approvedRelationshipKeys: ReadonlySet<string>, horizon: number): { definitions: FeatureDefinition[]; feedback: Map<string, { weight: number; review?: RelationshipReview }>; excluded: string[] } {
+  const safe = definitions.filter((item) => forecastFeatureAvailability(item, target, horizon) !== 'unavailable-future' && (item.transformation.kind === 'calendar' || item.source?.trackableId === target.trackableId || approvedRelationshipKeys.has(item.key)))
   const excluded = definitions.filter((item) => !safe.includes(item)).map((item) => item.key)
   const scored = safe.map((item) => ({ item, feedback: forecastFeatureReviewWeight(item, reviews, target.descriptorId), self: item.source?.trackableId === target.trackableId, relationship: approvedRelationshipKeys.has(item.key) }))
     .sort((a, b) => Number(b.self) - Number(a.self) || Number(b.relationship) - Number(a.relationship) || b.feedback.weight - a.feedback.weight || a.item.key.localeCompare(b.item.key)).slice(0, maximum)
@@ -208,7 +210,7 @@ function scalarForecast(target: ForecastTarget, categoryId: string | undefined, 
   const raw = dates.flatMap((date) => { const value = targetValues.get(date); const row = rows.get(date); const y = value ? valueFor(target, value, categoryId) : null; const x = row ? definitions.map((definition) => asNumber(row.cells[definition.key]?.value)) : []; return y === null || x.some((item) => item === null) ? [] : [{ date, y, x: x as number[] }] })
   const span = dates.length ? dateNumber(dates.at(-1)!) - dateNumber(dates[0]) + 1 : 0
   const observedValues = observed.map((point) => point.y)
-  const warnings = baselineEligibility(target, observed, request.asOfDate, policy)
+  const warnings = baselineEligibility(target, observed, request.historyCutoffDate ?? request.asOfDate, policy)
   const missingness = span ? 1 - observed.length / span : 1
   const positives = observedValues.filter(Boolean).length
   const limitedVariation = kind === 'binary' ? Math.min(positives, observed.length - positives) < policy.minimumClassCases : new Set(observedValues).size < 2
@@ -238,7 +240,8 @@ function scalarForecast(target: ForecastTarget, categoryId: string | undefined, 
 function forecastOne(input: TrendsData, descriptor: AnalysisSeriesDescriptor, request: ForecastRequest, policy: ForecastPolicy): ForecastResult {
   const cutoffStamp = request.asOfTimestamp ?? `${request.asOfDate}T23:59:59.999Z`
   const snapshot = snapshotForFeatureCutoff(input, request.asOfDate, cutoffStamp)
-  const track = buildAnalysisTrack(snapshot, descriptor, 'all', request.asOfDate)
+  const historyCutoffDate = request.historyCutoffDate ?? request.asOfDate
+  const track = buildAnalysisTrack(snapshot, descriptor, 'all', historyCutoffDate)
   const target = targetFor(descriptor, track.values, snapshot)
   const generatedAt = cutoffStamp
   if (!target) return { status: 'not-forecastable', target: { descriptorId: descriptor.id, trackableId: descriptor.trackableId, label: descriptor.name, measurementType: descriptor.measurementType, kind: 'numeric' }, forecastDate: request.forecastDate, generatedAt, dataCutoffDate: request.asOfDate, baselineModel: 'recent-mean', contributors: [], warnings: ['This Trackable does not yet have a defensible daily forecast representation.'], diagnostics: emptyDiagnostics() }
@@ -248,11 +251,11 @@ function forecastOne(input: TrendsData, descriptor: AnalysisSeriesDescriptor, re
   let approvedRelationshipKeys = new Set<string>()
   const regimeStarts = new Map<string, string>()
   try {
-    const catalog = discoverRelationships(snapshot, { targetDescriptorId: descriptor.id, startDate: first, endDate: request.asOfDate, asOfDate: request.asOfDate, asOfTimestamp: cutoffStamp, evaluateCurrentRegime: true })
+    const catalog = discoverRelationships(snapshot, { targetDescriptorId: descriptor.id, startDate: first, endDate: historyCutoffDate, asOfDate: historyCutoffDate, asOfTimestamp: cutoffStamp, evaluateCurrentRegime: true })
     approvedRelationshipKeys = new Set(catalog.ranked.filter((candidate) => candidate.status !== 'screened_out' && candidate.predictor.transformation.kind === 'lag').map((candidate) => candidate.predictor.key))
     for (const [id, regimes] of Object.entries(catalog.regimes)) { const current = regimes.find((regime) => regime.current); if (current) regimeStarts.set(id, current.startDate) }
   } catch { /* Forecasting can still use target history and known calendar features. */ }
-  const selection = forecastFeatures(frame.catalog, target, request.reviews ?? [], policy.maximumPredictors, approvedRelationshipKeys)
+  const selection = forecastFeatures(frame.catalog, target, request.reviews ?? [], policy.maximumPredictors, approvedRelationshipKeys, request.horizon ?? 1)
   const dates = [...new Set(track.values.map((value) => value.localDate))].sort(); const values = latestValues(track.values)
   const latestAge = dates.length ? dateNumber(request.asOfDate) - dateNumber(dates.at(-1)!) : Number.POSITIVE_INFINITY
   const scalarFor = (categoryId?: string) => {

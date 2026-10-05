@@ -12,6 +12,8 @@ import { trendsMappingEditPath } from './trendsNavigation.ts'
 import { MainPageHeader } from '../../components/MainPageHeader.tsx'
 import { InsightsPanel } from './InsightsPanel.tsx'
 import { ForecastPanel } from './ForecastPanel.tsx'
+import { ChartTooltip } from './ChartTooltip.tsx'
+import { useChartTooltip } from './chartTooltipInteraction.ts'
 
 const ranges: readonly { value: TrendRange; label: string }[] = [{ value: 7, label: '7 days' }, { value: 30, label: '30 days' }, { value: 90, label: '90 days' }, { value: 'all', label: 'All' }]
 const transformations: readonly { value: AnalysisTransformation; label: string }[] = [{ value: 'raw', label: 'Raw values' }, { value: 'normalize', label: 'Normalize 0–100' }, { value: 'z-score', label: 'Standardize' }]
@@ -43,18 +45,19 @@ function xPosition(localDate: string, dates: readonly string[], left = 64, right
 function SeriesMarker({ x, y, seriesIndex }: { x: number; y: number; seriesIndex: number }) {
   const className = 'analysis-chart__point'
   switch (seriesIndex % 8) {
-    case 1: return <rect className={className} x={x - 4.5} y={y - 4.5} width="9" height="9" rx="1"><title /></rect>
-    case 2: return <path className={className} d={`M ${x} ${y - 5.5} L ${x + 5.5} ${y} L ${x} ${y + 5.5} L ${x - 5.5} ${y} Z`}><title /></path>
-    case 3: return <path className={className} d={`M ${x} ${y - 6} L ${x + 5.5} ${y + 4.5} L ${x - 5.5} ${y + 4.5} Z`}><title /></path>
-    case 4: return <path className={className} d={`M ${x - 5} ${y - 5} L ${x + 5} ${y + 5} M ${x + 5} ${y - 5} L ${x - 5} ${y + 5}`}><title /></path>
-    case 5: return <path className={className} d={`M ${x - 5} ${y - 3} L ${x} ${y - 6} L ${x + 5} ${y - 3} L ${x + 5} ${y + 3} L ${x} ${y + 6} L ${x - 5} ${y + 3} Z`}><title /></path>
-    case 6: return <path className={className} d={`M ${x - 6} ${y} L ${x} ${y - 6} L ${x + 6} ${y} L ${x} ${y + 6} Z`}><title /></path>
-    case 7: return <path className={className} d={`M ${x - 5.5} ${y - 2} L ${x - 2} ${y - 5.5} L ${x + 2} ${y - 5.5} L ${x + 5.5} ${y - 2} L ${x + 2} ${y + 5.5} L ${x - 2} ${y + 5.5} Z`}><title /></path>
-    default: return <circle className={className} cx={x} cy={y} r="5"><title /></circle>
+    case 1: return <rect className={className} x={x - 4.5} y={y - 4.5} width="9" height="9" rx="1" />
+    case 2: return <path className={className} d={`M ${x} ${y - 5.5} L ${x + 5.5} ${y} L ${x} ${y + 5.5} L ${x - 5.5} ${y} Z`} />
+    case 3: return <path className={className} d={`M ${x} ${y - 6} L ${x + 5.5} ${y + 4.5} L ${x - 5.5} ${y + 4.5} Z`} />
+    case 4: return <path className={className} d={`M ${x - 5} ${y - 5} L ${x + 5} ${y + 5} M ${x + 5} ${y - 5} L ${x - 5} ${y + 5}`} />
+    case 5: return <path className={className} d={`M ${x - 5} ${y - 3} L ${x} ${y - 6} L ${x + 5} ${y - 3} L ${x + 5} ${y + 3} L ${x} ${y + 6} L ${x - 5} ${y + 3} Z`} />
+    case 6: return <path className={className} d={`M ${x - 6} ${y} L ${x} ${y - 6} L ${x + 6} ${y} L ${x} ${y + 6} Z`} />
+    case 7: return <path className={className} d={`M ${x - 5.5} ${y - 2} L ${x - 2} ${y - 5.5} L ${x + 2} ${y - 5.5} L ${x + 5.5} ${y - 2} L ${x + 2} ${y + 5.5} L ${x - 2} ${y + 5.5} Z`} />
+    default: return <circle className={className} cx={x} cy={y} r="5" />
   }
 }
 
 function QuantitativeTrack({ track, dates, seriesIndex = 0, overlay = false, sharedRange }: { track: AnalysisTrack; dates: readonly string[]; seriesIndex?: number; overlay?: boolean; sharedRange?: readonly [number, number] }) {
+  const chart = useChartTooltip()
   const points = track.values.filter((value): value is AnalysisValue & { numericValue: number } => value.numericValue !== undefined)
   if (!points.length) return null
   const width = 720; const height = overlay ? 260 : 210; const left = 64; const right = 12; const top = 18; const bottom = 34
@@ -64,22 +67,23 @@ function QuantitativeTrack({ track, dates, seriesIndex = 0, overlay = false, sha
   const y = (value: number) => top + ((max - value) / Math.max(.0001, max - min)) * (height - top - bottom)
   const positioned = points.map((point) => ({ ...point, x: xPosition(point.localDate, dates, left, right, width), y: y(point.numericValue) }))
   const path = positioned.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
-  return <svg className={`analysis-chart analysis-chart--series-${seriesIndex % 8}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${track.descriptor.name}: ${points.length} values`}>
+  return <div ref={chart.rootRef} className="chart-tooltip-region"><svg className={`analysis-chart analysis-chart--series-${seriesIndex % 8}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${track.descriptor.name}: ${points.length} values`} onClick={chart.dismiss}>
     <line className="analysis-chart__axis" x1={left} y1={height - bottom} x2={width - right} y2={height - bottom} />
     {!overlay ? <><text className="analysis-chart__label" x={left - 7} y={top + 5} textAnchor="end">{track.descriptor.measurementType === 'ordinal' ? points.find((point) => point.numericValue === rawMax)?.display ?? formatTrendNumber(rawMax) : formatTrendNumber(rawMax)}</text><text className="analysis-chart__label" x={left - 7} y={height - bottom + 5} textAnchor="end">{track.descriptor.measurementType === 'ordinal' ? points.find((point) => point.numericValue === rawMin)?.display ?? formatTrendNumber(rawMin) : formatTrendNumber(rawMin)}</text></> : null}
     {positioned.length > 1 ? <path className="analysis-chart__line" d={path} /> : null}
-    {positioned.map((point) => <g key={point.id}><SeriesMarker x={point.x} y={point.y} seriesIndex={seriesIndex} /><title>{dateLabel(point.localDate)}: {point.display}</title></g>)}
+    {positioned.map((point) => { const content = { id: point.id, title: dateLabel(point.localDate), lines: [`${track.descriptor.name}: ${point.display}`], x: point.x / width * 100, y: point.y / height * 100 }; return <g key={point.id}><circle className="chart-tooltip-hit" cx={point.x} cy={point.y} r="14" {...chart.markerProps(content)} /><SeriesMarker x={point.x} y={point.y} seriesIndex={seriesIndex} /></g> })}
     <text className="analysis-chart__date" x={left} y={height - 8}>{dates[0] ? dateLabel(dates[0], true) : ''}</text><text className="analysis-chart__date" x={width - right} y={height - 8} textAnchor="end">{dates.at(-1) ? dateLabel(dates.at(-1)!, true) : ''}</text>
-  </svg>
+  </svg><ChartTooltip tooltip={chart.tooltip} /></div>
 }
 
 function LaneTrack({ track, dates }: { track: AnalysisTrack; dates: readonly string[] }) {
+  const chart = useChartTooltip()
   const lanes = track.descriptor.measurementType === 'event' ? [{ id: 'event', label: 'Occurred', dates: track.values.map((value) => value.localDate), count: track.values.length }] : track.lanes
   const width = 720; const left = 112; const right = 16; const row = 38; const top = 12; const bottom = 34; const height = Math.max(96, top + lanes.length * row + bottom)
-  return <svg className="analysis-chart analysis-lane-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${track.descriptor.name}: categorical timeline`}>
-    {lanes.map((lane, laneIndex) => { const y = top + laneIndex * row + row / 2; return <g key={lane.id}><text className="analysis-chart__lane-label" x={left - 10} y={y + 5} textAnchor="end">{lane.label}</text><line className="analysis-chart__lane" x1={left} y1={y} x2={width - right} y2={y} />{[...new Set(lane.dates)].map((date) => <circle key={date} className="analysis-chart__occurrence" cx={xPosition(date, dates, left, right, width)} cy={y} r="6"><title>{dateLabel(date)}: {lane.label}</title></circle>)}</g> })}
+  return <div ref={chart.rootRef} className="chart-tooltip-region"><svg className="analysis-chart analysis-lane-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${track.descriptor.name}: categorical timeline`} onClick={chart.dismiss}>
+    {lanes.map((lane, laneIndex) => { const y = top + laneIndex * row + row / 2; return <g key={lane.id}><text className="analysis-chart__lane-label" x={left - 10} y={y + 5} textAnchor="end">{lane.label}</text><line className="analysis-chart__lane" x1={left} y1={y} x2={width - right} y2={y} />{[...new Set(lane.dates)].map((date) => { const x = xPosition(date, dates, left, right, width); const content = { id: `${lane.id}-${date}`, title: dateLabel(date), lines: [track.descriptor.name, lane.label], x: x / width * 100, y: y / height * 100 }; return <g key={date}><circle className="chart-tooltip-hit" cx={x} cy={y} r="14" {...chart.markerProps(content)} /><circle className="analysis-chart__occurrence" cx={x} cy={y} r="6" /></g> })}</g> })}
     <text className="analysis-chart__date" x={left} y={height - 8}>{dates[0] ? dateLabel(dates[0], true) : ''}</text><text className="analysis-chart__date" x={width - right} y={height - 8} textAnchor="end">{dates.at(-1) ? dateLabel(dates.at(-1)!, true) : ''}</text>
-  </svg>
+  </svg><ChartTooltip tooltip={chart.tooltip} /></div>
 }
 
 function TrackSummary({ track }: { track: AnalysisTrack }) {
